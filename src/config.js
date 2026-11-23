@@ -66,15 +66,41 @@ export const BELTS = [
 export const isBlackBelt = (belt) => /Degree/.test(belt || '');
 export const DISCIPLINES = { sparring: 'Sparring', combat: 'Combat sparring' };
 
+// --- Divisions (ATA 2026-27 rules) ----------------------------------------
 // ATA competition age = age on December 31 of the season's first year.
+// Black belt rank groups follow ATA's division chart for each age group.
+// Color belt rings are formed on the day at tournaments, so color belts are grouped here by belt range.
 export const AGE_GROUPS = [
-  { id: 'u8', label: '8 & under', lo: 0, hi: 8 },
-  { id: '9-10', label: '9–10', lo: 9, hi: 10 },
-  { id: '11-12', label: '11–12', lo: 11, hi: 12 },
-  { id: '13-14', label: '13–14', lo: 13, hi: 14 },
-  { id: '15-17', label: '15–17', lo: 15, hi: 17 },
-  { id: '18-29', label: '18–29', lo: 18, hi: 29 },
-  { id: '30-39', label: '30–39', lo: 30, hi: 39 },
-  { id: '40-49', label: '40–49', lo: 40, hi: 49 },
-  { id: '50+', label: '50 & up', lo: 50, hi: 200 },
+  { id: 'u8',    label: '8 & under', lo: 0,  hi: 8,   black: [['1-3', '1st–3rd Degree']] },
+  { id: '9-10',  label: '9–10',      lo: 9,  hi: 10,  black: [['1', '1st Degree'], ['2-3', '2nd–3rd Degree']] },
+  { id: '11-12', label: '11–12',     lo: 11, hi: 12,  black: [['1', '1st Degree'], ['2-3', '2nd–3rd Degree']] },
+  { id: '13-14', label: '13–14',     lo: 13, hi: 14,  black: [['1', '1st Degree'], ['2-3', '2nd–3rd Degree']] },
+  { id: '15-17', label: '15–17',     lo: 15, hi: 17,  black: [['1', '1st Degree'], ['2-3', '2nd–3rd Degree']] },
+  { id: '18-29', label: '18–29',     lo: 18, hi: 29,  black: [['1', '1st Degree'], ['2-3', '2nd–3rd Degree'], ['4-5', '4th–5th Degree']] },
+  { id: '30-39', label: '30–39',     lo: 30, hi: 39,  black: [['1', '1st Degree'], ['2-3', '2nd–3rd Degree'], ['4-5', '4th–5th Degree']] },
+  { id: '40-49', label: '40–49',     lo: 40, hi: 49,  black: [['1', '1st Degree'], ['2-3', '2nd–3rd Degree'], ['4-5', '4th–5th Degree']] },
+  { id: '50-59', label: '50–59',     lo: 50, hi: 59,  black: [['1', '1st Degree'], ['2-3', '2nd–3rd Degree'], ['4-5', '4th–5th Degree']] },
+  { id: '60-69', label: '60–69',     lo: 60, hi: 69,  black: [['1-3', '1st–3rd Degree'], ['4-5', '4th–5th Degree']] },
+  { id: '70+',   label: '70 & up',   lo: 70, hi: 200, black: [['1-3', '1st–3rd Degree'], ['4-5', '4th–5th Degree']] },
 ];
+export const COLOR_GROUPS = [
+  { id: 'woy', label: 'White–Yellow belts', belts: ['White', 'Orange', 'Yellow'] },
+  { id: 'cgp', label: 'Camo–Purple belts', belts: ['Camo', 'Green', 'Purple'] },
+  { id: 'bbr', label: 'Blue–Red/Black belts', belts: ['Blue', 'Brown', 'Red', 'Red/Black'] },
+];
+
+// --- Titles ----------------------------------------------------------------
+// Earned through achievements (src/lib/achievements.js). The ids must match the list in supabase/schema.sql.
+export const TITLE_NAMES = {
+  unbroken: 'Unbroken',
+  'iron-wall': 'Iron Wall',
+  'double-gold': 'Double Gold',
+  'giant-killer': 'Giant Killer',
+  'road-warrior': 'Road Warrior',
+  centurion: 'Centurion',
+  medalist: 'National Medalist',
+  'champion-of-champions': 'Super-20 Champion',
+  mythic: 'Mythic',
+  legend: 'Legend',
+  dedicated: 'Dedicated',
+};

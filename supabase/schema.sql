@@ -624,12 +624,199 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- Weekly challenges and titles
+--   One challenge is active each week (Monday to Sunday, Indiana time). They rotate through the
+--   school's active challenges in order. Completing it gives XP and that week's badge.
+--   Titles are earned in the app (see src/lib/achievements.js); a family picks one to show.
+-- ---------------------------------------------------------------------------
+
+alter table public.competitors add column if not exists title text;
+alter table public.competitors drop constraint if exists competitors_title_check;
+alter table public.competitors add constraint competitors_title_check check (title is null or title in (
+  'unbroken', 'iron-wall', 'double-gold', 'giant-killer', 'road-warrior', 'centurion',
+  'medalist', 'champion-of-champions', 'mythic', 'legend', 'dedicated'));
+
+create table if not exists public.challenges (
+  id           uuid primary key default gen_random_uuid(),
+  org_id       uuid not null references public.orgs(id) on delete cascade,
+  title        text not null,
+  description  text not null default '',
+  xp           int not null default 50 check (xp between 0 and 500),
+  active       boolean not null default true,
+  sort_order   int not null default 0,
+  created_at   timestamptz not null default now()
+);
+create index if not exists challenges_org_idx on public.challenges(org_id);
+
+create table if not exists public.challenge_completions (
+  id             uuid primary key default gen_random_uuid(),
+  competitor_id  uuid not null references public.competitors(id) on delete cascade,
+  challenge_id   uuid references public.challenges(id) on delete set null,
+  title          text not null,          -- kept even if the challenge is later edited or removed
+  xp             int not null,
+  week_start     date not null,
+  created_by     uuid references auth.users(id) on delete set null,
+  created_at     timestamptz not null default now(),
+  unique (competitor_id, week_start)
+);
+
+alter table public.challenges            enable row level security;
+alter table public.challenge_completions enable row level security;
+
+drop policy if exists challenges_read on public.challenges;
+create policy challenges_read on public.challenges for select using (is_member(org_id));
+
+drop policy if exists completions_read on public.challenge_completions;
+create policy completions_read on public.challenge_completions for select
+  using (exists (select 1 from competitors c where c.id = competitor_id and is_member(c.org_id)));
+
+-- Monday of the current week, in Indiana time.
+create or replace function public.current_week_start() returns date
+language sql stable as $$
+  select date_trunc('week', (now() at time zone 'America/Indiana/Indianapolis'))::date;
+$$;
+
+create or replace function public.current_challenge(p_org uuid)
+returns table (id uuid, title text, description text, xp int, week_start date)
+language plpgsql stable security definer set search_path = public as $$
+declare v_n int; v_week date := current_week_start(); v_i int;
+begin
+  if not is_member(p_org) then raise exception 'You are not part of this school.'; end if;
+  select count(*) into v_n from challenges c where c.org_id = p_org and c.active;
+  if v_n = 0 then return; end if;
+  v_i := (((v_week - date '2026-11-23') / 7) % v_n + v_n) % v_n;
+  return query
+    select c.id, c.title, c.description, c.xp, v_week from challenges c
+    where c.org_id = p_org and c.active
+    order by c.sort_order, c.created_at, c.id
+    offset v_i limit 1;
+end;
+$$;
+
+create or replace function public.log_challenge(p_competitor uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare v_org uuid; v_ch record;
+begin
+  select org_id into v_org from competitors where id = p_competitor and not is_placeholder;
+  if v_org is null then raise exception 'Competitor not found.'; end if;
+  if not can_manage(p_competitor) then raise exception 'You can only log challenges for your own competitors.'; end if;
+  select * into v_ch from current_challenge(v_org);
+  if v_ch.id is null then raise exception 'There is no challenge this week.'; end if;
+  if exists (select 1 from challenge_completions where competitor_id = p_competitor and week_start = v_ch.week_start) then
+    raise exception 'This week’s challenge is already logged.';
+  end if;
+  insert into challenge_completions (competitor_id, challenge_id, title, xp, week_start, created_by)
+    values (p_competitor, v_ch.id, v_ch.title, v_ch.xp, v_ch.week_start, auth.uid());
+end;
+$$;
+
+create or replace function public.delete_challenge_completion(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare v_comp uuid;
+begin
+  select competitor_id into v_comp from challenge_completions where id = p_id;
+  if v_comp is null then raise exception 'That challenge entry was not found.'; end if;
+  if not can_manage(v_comp) then raise exception 'You can only change your own competitors.'; end if;
+  delete from challenge_completions where id = p_id;
+end;
+$$;
+
+-- Admin: add or edit a challenge. p: {id?, org_id, title, description, xp, active, sort_order}
+create or replace function public.save_challenge(p jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare v_id uuid := nullif(p->>'id', '')::uuid; v_org uuid := (p->>'org_id')::uuid;
+begin
+  if v_id is not null then select org_id into v_org from challenges where id = v_id; end if;
+  if v_org is null or not is_admin(v_org) then raise exception 'Only an admin can edit challenges.'; end if;
+  if length(trim(coalesce(p->>'title', ''))) = 0 then raise exception 'Give the challenge a name.'; end if;
+  if v_id is null then
+    insert into challenges (org_id, title, description, xp, active, sort_order)
+      values (v_org, trim(p->>'title'), coalesce(trim(p->>'description'), ''),
+              coalesce((p->>'xp')::int, 50), coalesce((p->>'active')::boolean, true),
+              coalesce((p->>'sort_order')::int, (select coalesce(max(sort_order), 0) + 1 from challenges where org_id = v_org)))
+      returning id into v_id;
+  else
+    update challenges set title = trim(p->>'title'), description = coalesce(trim(p->>'description'), ''),
+      xp = coalesce((p->>'xp')::int, xp), active = coalesce((p->>'active')::boolean, active),
+      sort_order = coalesce((p->>'sort_order')::int, sort_order)
+    where id = v_id;
+  end if;
+  return v_id;
+end;
+$$;
+
+create or replace function public.delete_challenge(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare v_org uuid;
+begin
+  select org_id into v_org from challenges where id = p_id;
+  if v_org is null or not is_admin(v_org) then raise exception 'Only an admin can remove challenges.'; end if;
+  delete from challenges where id = p_id;
+end;
+$$;
+
+-- Starter challenges, added once when a school is set up (or from the Admin page if the list is empty).
+create or replace function public.add_starter_challenges(p_org uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if exists (select 1 from challenges where org_id = p_org) then return; end if;
+  insert into challenges (org_id, title, description, xp, sort_order) values
+    (p_org, 'Combo king', 'Land a clean jab, cross, round kick on the target 10 times in a row without dropping your guard.', 50, 1),
+    (p_org, 'Light feet', 'Stay on the balls of your feet for a full 2-minute round. No flat-footing, no crossing your feet.', 50, 2),
+    (p_org, 'Head hunter', 'Score 5 controlled head kicks in partner drills, each one chambered and pulled back.', 50, 3),
+    (p_org, 'Counter strike', 'Block or slip your partner''s attack and counter within one second, 10 times.', 50, 4),
+    (p_org, 'Edge of the ring', 'Spar a round where you get pushed to the edge and angle back to the center every time without stepping out.', 50, 5),
+    (p_org, 'Both sides', 'Throw every technique in a 2-minute drill from your weaker side.', 50, 6),
+    (p_org, 'Jump in', 'Land 3 jumping kicks to the body in partner drills, both feet off the floor.', 50, 7),
+    (p_org, 'Ring respect', 'Bow in, shake hands and thank every partner you spar this week. Your instructor will notice.', 50, 8),
+    (p_org, 'Combat control', 'Finish a combat sparring round with zero illegal strikes and no dropped weapon.', 50, 9),
+    (p_org, 'Two-minute engine', 'Keep moving and throwing for a full 2-minute round. No resting, no backing out of the ring.', 50, 10),
+    (p_org, 'Coach for a round', 'Help a newer student with one technique during class until they can do it on their own.', 50, 11),
+    (p_org, 'Shutout drill', 'Win a drill round against a partner without letting them score.', 50, 12);
+end;
+$$;
+
+create or replace function public.seed_starter_challenges(p_org uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not is_admin(p_org) then raise exception 'Only an admin can do that.'; end if;
+  perform add_starter_challenges(p_org);
+end;
+$$;
+
+create or replace function public.set_title(p_competitor uuid, p_title text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not can_manage(p_competitor) then raise exception 'You can only change your own competitors.'; end if;
+  update competitors set title = nullif(p_title, '') where id = p_competitor;
+end;
+$$;
+
+-- setup_org also adds the starter challenges.
+create or replace function public.setup_org(p_name text, p_email text, p_display_name text) returns text
+language plpgsql security definer set search_path = public as $$
+declare v_user uuid; v_org uuid; v_code text;
+begin
+  select id into v_user from auth.users where lower(email) = lower(trim(p_email));
+  if v_user is null then
+    raise exception 'No account for %. Sign in to the app once with that email first, then run this again.', p_email;
+  end if;
+  v_code := upper(substr(encode(gen_random_bytes(4), 'hex'), 1, 6));
+  insert into orgs (name, join_code) values (trim(p_name), v_code) returning id into v_org;
+  insert into members (org_id, user_id, role, display_name) values (v_org, v_user, 'admin', trim(p_display_name));
+  perform add_starter_challenges(v_org);
+  return v_code;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Permissions: signed-in users may call the functions; nobody may write tables directly.
 -- ---------------------------------------------------------------------------
 
 revoke all on all tables in schema public from anon, authenticated;
 grant select on public.orgs, public.members, public.competitors, public.competitor_private,
-  public.competitor_managers, public.tournaments, public.entries, public.matches, public.ratings
+  public.competitor_managers, public.tournaments, public.entries, public.matches, public.ratings,
+  public.challenges, public.challenge_completions
   to authenticated;
 
 revoke all on all functions in schema public from public, anon;
@@ -639,6 +826,8 @@ grant execute on function
   public.add_manager(uuid, uuid), public.remove_manager(uuid, uuid),
   public.create_competitor(jsonb), public.update_competitor(jsonb), public.update_placeholder(jsonb),
   public.merge_competitor(uuid, uuid), public.log_entry(jsonb), public.delete_entry(uuid),
-  public.delete_competitor(uuid)
+  public.delete_competitor(uuid), public.current_week_start(), public.current_challenge(uuid),
+  public.log_challenge(uuid), public.delete_challenge_completion(uuid), public.save_challenge(jsonb),
+  public.delete_challenge(uuid), public.seed_starter_challenges(uuid), public.set_title(uuid, text)
   to authenticated;
 -- recompute_ratings and setup_org are only run by the functions above or from the SQL editor.

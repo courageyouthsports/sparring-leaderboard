@@ -39,10 +39,23 @@ export function indexData(raw) {
     entriesByCompetitor.get(e.competitor_id).push(e);
   }
   const ratings = new Map(raw.ratings.map((r) => [`${r.competitor_id}:${r.discipline}`, r]));
-  return { ...raw, tournaments, competitorById, entries, entriesByCompetitor, ratings };
+  const completionsByCompetitor = new Map();
+  for (const cc of raw.completions || []) {
+    const w = { ...cc, week_start: String(cc.week_start).slice(0, 10) };
+    if (!completionsByCompetitor.has(cc.competitor_id)) completionsByCompetitor.set(cc.competitor_id, []);
+    completionsByCompetitor.get(cc.competitor_id).push(w);
+  }
+  for (const list of completionsByCompetitor.values()) list.sort((a, b) => b.week_start.localeCompare(a.week_start));
+  return { ...raw, tournaments, competitorById, entries, entriesByCompetitor, ratings, completionsByCompetitor };
 }
 
 export const entriesOf = (idx, id) => idx.entriesByCompetitor.get(id) || [];
+export const completionsOf = (idx, id) => idx.completionsByCompetitor?.get(id) || [];
+// The completion for this week's challenge, if any (the "temporary badge").
+export const weeklyDone = (idx, id) => {
+  const wk = idx.challenge?.week_start && String(idx.challenge.week_start).slice(0, 10);
+  return wk ? completionsOf(idx, id).find((c) => c.week_start === wk) || null : null;
+};
 export const ratingOf = (idx, id, discipline) => idx.ratings.get(`${id}:${discipline}`) || null;
 
 // ---- Tiers -----------------------------------------------------------------
@@ -160,6 +173,7 @@ export function xpFor(idx, competitorId) {
     }
   }
   xp += badgesFor(idx, competitorId).filter((b) => b.earned).length * XP.badge;
+  xp += completionsOf(idx, competitorId).reduce((s, c) => s + c.xp, 0);   // weekly challenges
   return xp;
 }
 

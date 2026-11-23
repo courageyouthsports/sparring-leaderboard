@@ -30,6 +30,8 @@ export default function Admin({ data, reload, session }) {
         <p className="join-code">{data.org.join_code}</p>
       </section>
 
+      <Challenges data={data} busy={busy} act={act} />
+
       <section>
         <h2>Accounts <span className="muted">{data.members.length}</span></h2>
         <ul className="admin-list">
@@ -120,5 +122,54 @@ function OpponentRow({ c, all, busy, act }) {
         </select>
       </span>
     </li>
+  );
+}
+
+function Challenges({ data, busy, act }) {
+  const [editing, setEditing] = useState(null);   // challenge id, 'new', or null
+  const list = data.challenges.slice().sort((a, b) => a.sort_order - b.sort_order);
+  const current = data.challenge?.id;
+
+  return (
+    <section>
+      <h2>Weekly challenges <span className="muted">{list.filter((c) => c.active).length} active</span></h2>
+      <p className="small muted">A new one comes up every Monday, going down this list in order. Turn one off to skip it.</p>
+      {list.length === 0 && (
+        <p><button className="primary" disabled={busy} onClick={() => act(() => rpc('seed_starter_challenges', { p_org: data.org.id }))}>Add the 12 starter challenges</button></p>
+      )}
+      <ul className="admin-list">
+        {list.map((ch) => (editing === ch.id ? (
+          <li key={ch.id}><ChallengeForm data={data} ch={ch} busy={busy} act={act} done={() => setEditing(null)} /></li>
+        ) : (
+          <li key={ch.id} className={ch.active ? '' : 'inactive'}>
+            <span>
+              <b>{ch.title}</b> {ch.id === current && <span className="title-chip small-chip">This week</span>}
+              <span className="muted"> {ch.xp} XP{ch.active ? '' : ', off'}</span>
+              <span className="small muted block">{ch.description}</span>
+            </span>
+            <span className="row-actions">
+              <button onClick={() => setEditing(ch.id)}>Edit</button>
+              <button disabled={busy} onClick={() => act(() => rpc('save_challenge', { p: { ...ch, active: !ch.active } }))}>{ch.active ? 'Turn off' : 'Turn on'}</button>
+              <button className="link danger" disabled={busy} onClick={() => act(() => rpc('delete_challenge', { p_id: ch.id }), `Remove "${ch.title}"? Students keep the XP from past weeks.`)}>Remove</button>
+            </span>
+          </li>
+        )))}
+      </ul>
+      {editing === 'new'
+        ? <ChallengeForm data={data} ch={null} busy={busy} act={act} done={() => setEditing(null)} />
+        : <button onClick={() => setEditing('new')}>Add a challenge</button>}
+    </section>
+  );
+}
+
+function ChallengeForm({ data, ch, busy, act, done }) {
+  const [f, setF] = useState({ title: ch?.title || '', description: ch?.description || '', xp: ch?.xp ?? 50 });
+  return (
+    <form className="challenge-form stack" onSubmit={(e) => { e.preventDefault(); act(() => rpc('save_challenge', { p: { ...(ch || {}), org_id: data.org.id, ...f, xp: Number(f.xp) } })).then(done); }}>
+      <label className="field"><span className="field-label">Name</span><input required value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></label>
+      <label className="field"><span className="field-label">What to do</span><input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></label>
+      <label className="field"><span className="field-label">XP</span><input type="number" min="0" max="500" value={f.xp} onChange={(e) => setF({ ...f, xp: e.target.value })} /></label>
+      <div className="actions"><button className="primary" disabled={busy}>Save challenge</button><button type="button" className="link" onClick={done}>Cancel</button></div>
+    </form>
   );
 }

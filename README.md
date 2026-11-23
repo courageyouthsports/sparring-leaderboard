@@ -6,6 +6,14 @@ Students and parents log ATA tournament sparring results. The app turns them int
 - **Experience** that only goes up, earned by competing, winning, placing and earning badges.
 - **ATA points**: what each student should have on their ATA profile this season, by the 2026–27 rules.
 - **Tier emblems** (Bronze → Mythic) for both tracks, plus badges.
+- **Home screen**: the student's name and both ranks up top, this week's in-class challenge, then their ATA division's leaderboard (any other division is one menu away).
+- **Weekly challenges**: one per week (Monday–Sunday), rotating through the list on the Admin page. Logging it gives XP and that week's badge.
+- **Achievements and titles**: big milestones (e.g. *Unbroken*: 10 wins in a row) unlock a title the family can show next to the name on leaderboards.
+- **Share**: makes a brag picture and message for the phone's share menu.
+
+Divisions follow ATA's 2026–27 black belt chart (gender, competition age, rank group). Color belt rings are formed on the day, so color belts are grouped White–Yellow, Camo–Purple and Blue–Red/Black (change in `src/config.js`).
+
+**Updating the database:** after pulling new code, run `supabase/schema.sql` again in the SQL Editor. It's safe to re-run and keeps all data.
 
 Built for Courage Martial Arts and set up so other schools can be added later: every record belongs to a school, and families join with that school's code. ATA numbers are visible only to the family and the school's admins.
 

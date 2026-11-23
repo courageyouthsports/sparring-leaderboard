@@ -156,7 +156,7 @@ input:focus, select:focus { border-color: var(--ink); outline: none; box-shadow:
 .tier-card.faded { opacity: .75; }
 .big { font-family: var(--display); font-size: 2.5rem; font-weight: 700; line-height: 1; margin: .25rem 0 .4rem; font-variant-numeric: tabular-nums; }
 .unit { font-size: 1rem; color: var(--muted); font-weight: 600; }
-.progress { height: 8px; background: var(--canvas); border-radius: 99px; overflow: hidden; margin: .4rem 0 .3rem; max-width: 320px; }
+.progress { display: block; height: 8px; background: var(--canvas); border-radius: 99px; overflow: hidden; margin: .4rem 0 .3rem; max-width: 320px; }
 .progress span { display: block; height: 100%; background: var(--red); border-radius: 99px; }
 .spark { width: 100%; max-width: 320px; height: 56px; margin-top: .25rem; }
 .spark-line { fill: none; stroke: var(--red); stroke-width: 2.25; stroke-linejoin: round; }
@@ -224,3 +224,62 @@ input:focus, select:focus { border-color: var(--ink); outline: none; box-shadow:
 .join-code { font-family: var(--display); font-size: 3rem; font-weight: 700; letter-spacing: .25em; margin: 0; color: var(--red); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ---- Student card (name + both ranks) ---- */
+.me { margin-top: .5rem; }
+.me-name h1 { font-size: 3rem; margin: 0; line-height: 1; }
+.me-name h1 a { text-decoration: none; }
+.me-name p { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; margin: .5rem 0 0; color: var(--muted); }
+.me-name .share { margin-top: .75rem; }
+.title-chip { display: inline-block; font-family: var(--display); font-weight: 600; font-size: 1rem; line-height: 1.2;
+  background: var(--red); color: #fff; padding: .15rem .65rem; border-radius: 99px; }
+.small-chip { font-size: .8rem; padding: .05rem .5rem; margin-right: .4rem; }
+.weekly-chip { display: inline-block; font-weight: 600; font-size: .85rem; color: var(--good); border: 1px solid currentColor; padding: .05rem .55rem; border-radius: 99px; }
+.me-ranks { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: 1.1rem; }
+@media (max-width: 560px) { .me-ranks { grid-template-columns: 1fr; } }
+.rank { display: grid; grid-template-columns: 84px 1fr; gap: 1rem; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem 1.1rem; }
+.rank > div { display: grid; line-height: 1.2; }
+.rank-kind { font-size: .85rem; color: var(--muted); font-weight: 500; }
+.rank-tier { font-family: var(--display); font-size: 2.25rem; font-weight: 700; line-height: 1; margin: .1rem 0 .15rem; }
+.rank-num { font-family: var(--display); font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rank-next { font-size: .8rem; color: var(--muted); margin-top: .3rem; }
+.rank-next .progress { margin: .1rem 0 .25rem; }
+.share { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+
+/* ---- Weekly challenge ---- */
+.challenge { background: var(--ink); color: #fff; border-radius: var(--radius); padding: 1.25rem 1.4rem; margin-top: 1.5rem; }
+@media (prefers-color-scheme: dark) { .challenge { background: #22304F; } }
+.challenge h2 { font-size: 2rem; margin: .35rem 0 .3rem; }
+.challenge p { color: #D7DEEA; }
+.challenge .muted { color: #A8B4C8; }
+.challenge-top { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+.challenge-kind { color: #A8B4C8; font-size: .9rem; }
+.challenge-xp { font-family: var(--display); font-weight: 700; font-size: 1.3rem; color: #FF8A99; }
+.challenge-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin: .5rem 0 .75rem; }
+.challenge-done { display: inline-flex; gap: .6rem; align-items: center; font-weight: 600; color: #7FE0A8; }
+.challenge-done .link { color: #A8B4C8; }
+.challenge .link:hover { color: #fff; }
+.empty-challenge { background: var(--surface); color: var(--ink); border: 1px dashed var(--line); }
+.empty-challenge p { color: var(--ink); margin: 0; }
+
+/* ---- Division leaderboard ---- */
+.division-board { margin-top: 2rem; }
+.division-pick { display: grid; gap: .15rem; flex: 1 1 18rem; }
+.division-pick select { font-family: var(--display); font-weight: 700; font-size: 1.35rem; min-height: 46px; }
+.board li.is-me .board-row { background: var(--red-soft); }
+.weekly-dot { display: inline-block; width: .55rem; height: .55rem; background: var(--good); border-radius: 50%; margin-left: .45rem; vertical-align: middle; }
+
+/* ---- Achievements ---- */
+.title-pick { display: grid; gap: .3rem; max-width: 22rem; margin: .5rem 0 1rem; }
+.achievements { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.achievements li { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .75rem .9rem; display: grid; gap: .25rem; color: var(--muted); }
+.achievements li .progress { margin: .3rem 0 0; max-width: none; }
+.achievements li.done { color: var(--ink); border-color: var(--red); box-shadow: inset 4px 0 0 var(--red); }
+.ach-top { display: flex; justify-content: space-between; gap: .5rem; align-items: baseline; }
+.ach-top b { font-family: var(--display); font-size: 1.2rem; font-weight: 700; }
+.achievements li.done .ach-top b { color: var(--red); }
+.badges li.weekly-badge { border-color: var(--good); background: color-mix(in srgb, var(--good) 12%, var(--surface)); }
+
+/* ---- Admin challenges ---- */
+.admin-list li.inactive { opacity: .6; }
+.challenge-form { width: 100%; }

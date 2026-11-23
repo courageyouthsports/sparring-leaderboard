@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { DISCIPLINES, PROVISIONAL_MATCHES, TIER_NAMES, XP_TIERS, RATING_TIERS } from '../config.js';
+import { DISCIPLINES, PROVISIONAL_MATCHES, TIER_NAMES, RATING_TIERS, TITLE_NAMES } from '../config.js';
 import {
-  badgesFor, entriesOf, fullName, nextTier, ratingHistory, ratingOf, ratingTier, recordOf, seasonLabel, seasonPoints,
-  seasonYear, teamRecordOf, todayStr, xpFor, xpTier,
+  badgesFor, completionsOf, entriesOf, fullName, nextTier, ratingHistory, ratingOf, ratingTier, recordOf, seasonLabel,
+  seasonPoints, seasonYear, teamRecordOf, todayStr, weeklyDone,
 } from '../lib/scoring.js';
+import { achievementsFor } from '../lib/achievements.js';
+import MeCard from '../components/MeCard.jsx';
 import { rpc } from '../lib/supabase.js';
 import { Delta, Emblem, ErrorNote, Score, Sparkline, fmtDate, ordinal } from '../components/ui.jsx';
 
@@ -17,9 +19,8 @@ export default function Profile({ data, id, reload, isAdmin }) {
 
   const canManage = data.myCompetitorIds.has(id) || isAdmin;
   const mine = data.myCompetitorIds.has(id);
-  const xp = xpFor(data, id);
-  const xt = xpTier(xp);
-  const xn = nextTier(xp, XP_TIERS);
+  const completions = completionsOf(data, id);
+  const weekly = weeklyDone(data, id);
   const season = seasonYear(todayStr());
   const sp = seasonPoints(data, id, season);
   const badges = badgesFor(data, id);
@@ -33,30 +34,14 @@ export default function Profile({ data, id, reload, isAdmin }) {
 
   return (
     <>
-      <div className="profile-head">
-        <h1>{fullName(c)}</h1>
-        <p className="muted">{[c.belt, c.school, c.state].filter(Boolean).join(', ')}</p>
-        {(mine || canManage) && <a className="button primary" href={`#/log?competitor=${id}`}>Log a result</a>}
-      </div>
+      <MeCard data={data} c={c} link={false} />
+      {(mine || canManage) && <p><a className="button primary" href={`#/log?competitor=${id}`}>Log a result</a></p>}
 
       <section className="tiers">
-        <div className="tier-card">
-          <Emblem track="experience" tier={xt.id} size={72} />
-          <div>
-            <h2>{TIER_NAMES[xt.id]} <span className="muted">experience</span></h2>
-            <p className="big">{xp.toLocaleString()} <span className="unit">XP</span></p>
-            {xn ? (
-              <>
-                <div className="progress" role="progressbar" aria-valuemin={xt.min} aria-valuemax={xn.min} aria-valuenow={xp}>
-                  <span style={{ width: `${((xp - xt.min) / (xn.min - xt.min)) * 100}%` }} />
-                </div>
-                <p className="small muted">{(xn.min - xp).toLocaleString()} XP to {TIER_NAMES[xn.id]}</p>
-              </>
-            ) : <p className="small muted">Top tier reached</p>}
-          </div>
-        </div>
         {['sparring', 'combat'].map((d) => <RatingCard key={d} data={data} id={id} discipline={d} />)}
       </section>
+
+      <Achievements data={data} c={c} canManage={canManage} reload={reload} />
 
       <section>
         <h2>ATA points, {seasonLabel(season)} season</h2>
@@ -88,7 +73,13 @@ export default function Profile({ data, id, reload, isAdmin }) {
 
       <section>
         <h2>Badges <span className="muted">{badges.filter((b) => b.earned).length} of {badges.length}</span></h2>
+        {completions.length > 0 && <p className="small muted">Weekly challenges completed: {completions.length}</p>}
         <ul className="badges">
+          {weekly && (
+            <li className="earned weekly-badge">
+              <b>{weekly.title}</b><span>This week’s challenge, completed. Lasts until Sunday.</span>
+            </li>
+          )}
           {badges.map((b) => (
             <li key={b.id} className={b.earned ? 'earned' : ''}>
               <b>{b.name}</b><span>{b.desc}</span>
@@ -203,5 +194,47 @@ function OpponentProfile({ data, c }) {
         </ul>
       </section>
     </>
+  );
+}
+
+function Achievements({ data, c, canManage, reload }) {
+  const list = achievementsFor(data, c.id);
+  const earned = list.filter((a) => a.done);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function choose(title) {
+    setBusy(true); setError(null);
+    try { await rpc('set_title', { p_competitor: c.id, p_title: title || null }); await reload(); } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+
+  return (
+    <section>
+      <h2>Achievements <span className="muted">{earned.length} of {list.length}</span></h2>
+      <p className="small muted">Each achievement unlocks a title that can show next to {c.first_name}’s name on the leaderboards.</p>
+      {canManage && earned.length > 0 && (
+        <label className="title-pick">
+          <span className="field-label">Title shown on leaderboards</span>
+          <select value={c.title && earned.some((a) => a.id === c.title) ? c.title : ''} disabled={busy} onChange={(e) => choose(e.target.value)}>
+            <option value="">No title</option>
+            {earned.map((a) => <option key={a.id} value={a.id}>{TITLE_NAMES[a.id]}</option>)}
+          </select>
+        </label>
+      )}
+      <ErrorNote error={error} />
+      <ul className="achievements">
+        {list.map((a) => (
+          <li key={a.id} className={a.done ? 'done' : ''}>
+            <div className="ach-top">
+              <b>{a.title}</b>
+              <span className="muted small">{a.done ? 'Unlocked' : a.goal > 1 ? `${a.value.toLocaleString()} / ${a.goal.toLocaleString()}` : 'Locked'}</span>
+            </div>
+            <span className="small">{a.desc}</span>
+            {!a.done && a.goal > 1 && <span className="progress"><span style={{ width: `${a.pct}%` }} /></span>}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
