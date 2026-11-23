@@ -3,6 +3,8 @@ import { fullName } from '../lib/scoring.js';
 import { rpc } from '../lib/supabase.js';
 import { ErrorNote } from '../components/ui.jsx';
 
+const ROLE_NAMES = { admin: 'Admin', instructor: 'Instructor', member: 'Family' };
+
 export default function Admin({ data, reload, session }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -37,12 +39,13 @@ export default function Admin({ data, reload, session }) {
         <ul className="admin-list">
           {data.members.map((m) => (
             <li key={m.user_id}>
-              <span><b>{m.display_name || 'No name'}</b> <span className="muted">{m.role === 'admin' ? 'Admin' : 'Family'}</span></span>
+              <span><b>{m.display_name || 'No name'}</b> <span className="muted">{ROLE_NAMES[m.role]}</span></span>
               {m.user_id !== session.user.id && (
                 <span className="row-actions">
-                  <button disabled={busy} onClick={() => act(() => rpc('set_member_role', { p_org: org, p_user: m.user_id, p_role: m.role === 'admin' ? 'member' : 'admin' }))}>
-                    {m.role === 'admin' ? 'Remove admin' : 'Make admin'}
-                  </button>
+                  <select aria-label={`Role for ${m.display_name}`} value={m.role} disabled={busy}
+                    onChange={(e) => act(() => rpc('set_member_role', { p_org: org, p_user: m.user_id, p_role: e.target.value }))}>
+                    <option value="member">Family</option><option value="instructor">Instructor (approves)</option><option value="admin">Admin</option>
+                  </select>
                   <button disabled={busy} className="link danger" onClick={() => act(() => rpc('remove_member', { p_org: org, p_user: m.user_id }), `Remove ${m.display_name}? Their competitors and results stay.`)}>Remove</button>
                 </span>
               )}

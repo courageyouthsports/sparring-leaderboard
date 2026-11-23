@@ -9,6 +9,8 @@ import Profile from './pages/Profile.jsx';
 import LogResult from './pages/LogResult.jsx';
 import MyCompetitors from './pages/MyCompetitors.jsx';
 import Admin from './pages/Admin.jsx';
+import LogClass from './pages/LogClass.jsx';
+import Review, { pendingItems } from './pages/Review.jsx';
 
 export default function App() {
   const [session, setSession] = useState(undefined);
@@ -37,11 +39,15 @@ function Signed({ session }) {
   if (!membership) return <Join onJoined={reload} session={session} />;
 
   const isAdmin = membership.role === 'admin';
-  const props = { data, reload, session, membership, isAdmin, params: route.params };
+  const isApprover = isAdmin || membership.role === 'instructor';
+  const props = { data, reload, session, membership, isAdmin, isApprover, params: route.params };
+  const waiting = isApprover ? pendingItems(data).length : 0;
   const path = route.path;
   let page;
   if (path.startsWith('/c/')) page = <Profile {...props} id={path.slice(3)} />;
-  else if (path === '/log') page = <LogResult {...props} />;
+  else if (path === '/log') page = <LogResult key={route.params.entry || 'new'} {...props} />;
+  else if (path === '/class') page = <LogClass key={route.params.class || 'new'} {...props} />;
+  else if (path === '/review' && isApprover) page = <Review {...props} />;
   else if (path === '/mine') page = <MyCompetitors {...props} />;
   else if (path === '/admin' && isAdmin) page = <Admin {...props} />;
   else page = <Leaderboard {...props} />;
@@ -55,9 +61,11 @@ function Signed({ session }) {
           <span>{data.org.name} <b>Sparring</b></span>
         </a>
         <nav className="nav" aria-label="Main">
-          <a href="#/" aria-current={tab === '/' || tab === '' ? 'page' : undefined}>Rankings</a>
-          <a href="#/log" aria-current={tab === '/log' ? 'page' : undefined}>Log a result</a>
+          <a href="#/" aria-current={tab === '/' || tab === '' ? 'page' : undefined}>Home</a>
+          <a href="#/class" aria-current={tab === '/class' ? 'page' : undefined}>Log a class</a>
+          <a href="#/log" aria-current={tab === '/log' ? 'page' : undefined}>Log a tournament</a>
           <a href="#/mine" aria-current={tab === '/mine' ? 'page' : undefined}>My competitors</a>
+          {isApprover && <a href="#/review" aria-current={tab === '/review' ? 'page' : undefined}>Review{waiting > 0 && <span className="count">{waiting}</span>}</a>}
           {isAdmin && <a href="#/admin" aria-current={tab === '/admin' ? 'page' : undefined}>Admin</a>}
         </nav>
       </header>

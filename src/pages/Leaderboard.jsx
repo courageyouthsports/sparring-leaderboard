@@ -96,7 +96,7 @@ export default function Home({ data, params, reload, isAdmin }) {
 
         <div className="filters">
           {board === 'competitive' && (
-            <Segmented label="Event" value={discipline} onChange={setDiscipline} options={[['sparring', 'Sparring'], ['combat', 'Combat']]} />
+            <Segmented label="Event" value={discipline} onChange={setDiscipline} options={[['sparring', 'Sparring'], ['combat', 'Combat'], ['class', 'Class']]} />
           )}
           {board === 'points' && (
             <>
@@ -112,7 +112,8 @@ export default function Home({ data, params, reload, isAdmin }) {
         <p className="muted small">
           {board === 'points' && 'What each student should have on their ATA profile, from the results logged here. Only the best results in each class count.'}
           {board === 'experience' && 'Earned by competing and completing weekly challenges. It never goes down.'}
-          {board === 'competitive' && 'Moves with every match. Big wins over strong opponents move it most; close losses barely cost anything.'}
+          {board === 'competitive' && discipline !== 'class' && 'Tournament matches only. Big wins over strong opponents move it most; close losses barely cost anything.'}
+          {board === 'competitive' && discipline === 'class' && 'From approved in-class matches. Separate from the tournament ratings.'}
         </p>
 
         {rows.length === 0 ? (

@@ -30,6 +30,9 @@ create table if not exists public.members (
 );
 
 -- Competitors: our students, plus placeholder profiles for opponents from other schools.
+alter table public.members drop constraint if exists members_role_check;
+alter table public.members add constraint members_role_check check (role in ('admin', 'instructor', 'member'));
+
 create table if not exists public.competitors (
   id              uuid primary key default gen_random_uuid(),
   org_id          uuid not null references public.orgs(id) on delete cascade,
@@ -90,6 +93,16 @@ create table if not exists public.entries (
 );
 
 -- Each match (or, for teams, the student's own bout in a team match).
+-- Approval workflow (added after the first release; safe to re-run).
+alter table public.entries add column if not exists status text not null default 'approved';
+alter table public.entries drop constraint if exists entries_status_check;
+alter table public.entries add constraint entries_status_check check (status in ('pending', 'approved', 'rejected'));
+alter table public.entries add column if not exists submission_id uuid;      -- entries logged together as one tournament day
+alter table public.entries add column if not exists review_note text not null default '';
+alter table public.entries add column if not exists reviewed_by uuid references auth.users(id) on delete set null;
+alter table public.entries add column if not exists reviewed_at timestamptz;
+create index if not exists entries_status_idx on public.entries(status);
+
 create table if not exists public.matches (
   id                 uuid primary key default gen_random_uuid(),
   entry_id           uuid not null references public.entries(id) on delete cascade,
@@ -110,10 +123,41 @@ create table if not exists public.matches (
 create index if not exists matches_entry_idx on public.matches(entry_id);
 create index if not exists matches_opponent_idx on public.matches(opponent_id);
 
+-- In-class sparring: a student logs a class they attended, with any matches and the weekly challenge.
+create table if not exists public.class_logs (
+  id              uuid primary key default gen_random_uuid(),
+  competitor_id   uuid not null references public.competitors(id) on delete cascade,
+  class_date      date not null,
+  challenge_done  boolean not null default false,
+  note            text not null default '',
+  status          text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  review_note     text not null default '',
+  reviewed_by     uuid references auth.users(id) on delete set null,
+  reviewed_at     timestamptz,
+  created_by      uuid references auth.users(id) on delete set null,
+  created_at      timestamptz not null default now(),
+  unique (competitor_id, class_date)
+);
+create table if not exists public.class_matches (
+  id                 uuid primary key default gen_random_uuid(),
+  class_log_id       uuid not null references public.class_logs(id) on delete cascade,
+  round_no           int not null default 1,
+  discipline         text not null default 'sparring' check (discipline in ('sparring', 'combat')),
+  opponent_id        uuid not null references public.competitors(id) on delete cascade,
+  my_score           int not null check (my_score between 0 and 99),
+  opp_score          int not null check (opp_score between 0 and 99),
+  won                boolean not null,
+  rating_before      numeric,
+  rating_after       numeric,
+  opp_rating_before  numeric,
+  opp_rating_after   numeric
+);
+create index if not exists class_matches_log_idx on public.class_matches(class_log_id);
+
 -- Current skill rating per competitor per discipline (rebuilt from all matches).
 create table if not exists public.ratings (
   competitor_id  uuid not null references public.competitors(id) on delete cascade,
-  discipline     text not null check (discipline in ('sparring', 'combat')),
+  discipline     text not null,
   rating         numeric not null,
   peak           numeric not null,
   matches        int not null,
@@ -121,9 +165,18 @@ create table if not exists public.ratings (
   primary key (competitor_id, discipline)
 );
 
+alter table public.ratings drop constraint if exists ratings_discipline_check;
+alter table public.ratings add constraint ratings_discipline_check check (discipline in ('sparring', 'combat', 'class'));
+
 -- ---------------------------------------------------------------------------
 -- Helpers
 -- ---------------------------------------------------------------------------
+
+-- Instructors and admins approve results.
+create or replace function public.is_approver(p_org uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from members where org_id = p_org and user_id = auth.uid() and role in ('admin', 'instructor'));
+$$;
 
 create or replace function public.is_member(p_org uuid) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -183,26 +236,59 @@ create policy matches_read on public.matches for select
   using (exists (select 1 from entries e join competitors c on c.id = e.competitor_id
                  where e.id = entry_id and is_member(c.org_id)));
 
+alter table public.class_logs    enable row level security;
+alter table public.class_matches enable row level security;
+
+drop policy if exists class_logs_read on public.class_logs;
+create policy class_logs_read on public.class_logs for select
+  using (exists (select 1 from competitors c where c.id = competitor_id and is_member(c.org_id)));
+
+drop policy if exists class_matches_read on public.class_matches;
+create policy class_matches_read on public.class_matches for select
+  using (exists (select 1 from class_logs l join competitors c on c.id = l.competitor_id
+                 where l.id = class_log_id and is_member(c.org_id)));
+
 drop policy if exists ratings_read on public.ratings;
 create policy ratings_read on public.ratings for select
   using (exists (select 1 from competitors c where c.id = competitor_id and is_member(c.org_id)));
 
 -- ---------------------------------------------------------------------------
 -- Rating engine
---   Everyone starts at 1000, separately for sparring and combat sparring.
+--   Everyone starts at 1000, separately for sparring, combat sparring and class matches.
 --   Expected  E = 1 / (1 + 10^((opponent - me) / 400))
 --   Result    S = 0.5 x (1 if won) + 0.5 x (my points / total points)
 --   Change    = 32 x tier multiplier x (S - E); the opponent moves by the same amount the other way.
---   Tier multipliers: AAA 1.5, AA 1.3, A+ 1.15, A 1.0, B 0.75, C 0.5
+--   Tier multipliers: AAA 1.5, AA 1.3, A+ 1.15, A 1.0, B 0.75, C 0.5, class matches 0.5
 -- The whole history is replayed in date order every time a result changes, so edits and
 -- deletes are always reflected correctly. If both students in a match logged it, it counts once.
 -- ---------------------------------------------------------------------------
 
+-- One Elo step on the working table _r. Returns {my rating before, their rating before, change}.
+create or replace function public.elo_step(p_me uuid, p_opp uuid, p_disc text, p_my int, p_their int,
+                                           p_won boolean, p_mult numeric) returns numeric[]
+language plpgsql set search_path = public as $$
+declare ra numeric; rb numeric; e numeric; s numeric; d numeric; tot int := p_my + p_their;
+begin
+  insert into _r values (p_me, p_disc, 1000, 0, 0, 1000) on conflict do nothing;
+  insert into _r values (p_opp, p_disc, 1000, 0, 0, 1000) on conflict do nothing;
+  select rating into ra from _r where cid = p_me and disc = p_disc;
+  select rating into rb from _r where cid = p_opp and disc = p_disc;
+  s := 0.5 * (case when p_won then 1 else 0 end) + 0.5 * (case when tot > 0 then p_my::numeric / tot else 0.5 end);
+  e := 1 / (1 + power(10::numeric, (rb - ra) / 400));
+  d := 32 * p_mult * (s - e);
+  update _r set rating = rating + d, n = n + 1, w = w + (case when p_won then 1 else 0 end), peak = greatest(peak, rating + d)
+    where cid = p_me and disc = p_disc;
+  update _r set rating = rating - d, n = n + 1, w = w + (case when p_won then 0 else 1 end), peak = greatest(peak, rating - d)
+    where cid = p_opp and disc = p_disc;
+  return array[ra, rb, d];
+end;
+$$;
+
+-- Only approved results count. Class matches build a separate "class" rating (multiplier 0.5).
 create or replace function public.recompute_ratings(p_org uuid) returns void
 language plpgsql security definer set search_path = public as $$
 declare
-  m record;
-  ra numeric; rb numeric; e numeric; s numeric; mult numeric; d numeric; tot int;
+  m record; r numeric[]; mult numeric;
 begin
   create temp table if not exists _r (
     cid uuid, disc text, rating numeric, n int, w int, peak numeric,
@@ -214,54 +300,73 @@ begin
   from entries en join tournaments t on t.id = en.tournament_id
   where en.id = x.entry_id and t.org_id = p_org;
 
+  -- tournament matches
   for m in
     select x.id, x.opponent_id, x.my_score, x.opp_score, x.won,
            en.competitor_id as cid, en.discipline as disc, t.tier
     from matches x
     join entries en on en.id = x.entry_id
     join tournaments t on t.id = en.tournament_id
-    where t.org_id = p_org
+    where t.org_id = p_org and en.status = 'approved'
       and not exists (   -- skip the second copy of a match both students logged
         select 1 from matches y join entries e2 on e2.id = y.entry_id
-        where e2.tournament_id = en.tournament_id and e2.discipline = en.discipline
+        where e2.status = 'approved' and e2.tournament_id = en.tournament_id and e2.discipline = en.discipline
           and e2.competitor_id = x.opponent_id and y.opponent_id = en.competitor_id
           and y.my_score = x.opp_score and y.opp_score = x.my_score and y.won <> x.won
           and y.id < x.id)
     order by t.event_date, en.created_at, en.id, x.round_no, x.id
   loop
-    insert into _r values (m.cid, m.disc, 1000, 0, 0, 1000) on conflict do nothing;
-    insert into _r values (m.opponent_id, m.disc, 1000, 0, 0, 1000) on conflict do nothing;
-    select rating into ra from _r where cid = m.cid and disc = m.disc;
-    select rating into rb from _r where cid = m.opponent_id and disc = m.disc;
-
-    tot  := m.my_score + m.opp_score;
-    s    := 0.5 * (case when m.won then 1 else 0 end)
-          + 0.5 * (case when tot > 0 then m.my_score::numeric / tot else 0.5 end);
-    e    := 1 / (1 + power(10::numeric, (rb - ra) / 400));
     mult := case m.tier when 'AAA' then 1.5 when 'AA' then 1.3 when 'A+' then 1.15
                         when 'A' then 1.0 when 'B' then 0.75 else 0.5 end;
-    d    := 32 * mult * (s - e);
-
-    update _r set rating = rating + d, n = n + 1, w = w + (case when m.won then 1 else 0 end),
-                  peak = greatest(peak, rating + d)
-      where cid = m.cid and disc = m.disc;
-    update _r set rating = rating - d, n = n + 1, w = w + (case when m.won then 0 else 1 end),
-                  peak = greatest(peak, rating - d)
-      where cid = m.opponent_id and disc = m.disc;
-
-    update matches set rating_before = round(ra, 1), rating_after = round(ra + d, 1),
-                       opp_rating_before = round(rb, 1), opp_rating_after = round(rb - d, 1)
+    r := elo_step(m.cid, m.opponent_id, m.disc, m.my_score, m.opp_score, m.won, mult);
+    update matches set rating_before = round(r[1], 1), rating_after = round(r[1] + r[3], 1),
+                       opp_rating_before = round(r[2], 1), opp_rating_after = round(r[2] - r[3], 1)
       where id = m.id;
   end loop;
 
-  -- give the skipped duplicate copies the same numbers, seen from the other side
   update matches y set rating_before = x.opp_rating_before, rating_after = x.opp_rating_after,
                        opp_rating_before = x.rating_before, opp_rating_after = x.rating_after
   from matches x, entries ex, entries ey, tournaments t
   where ex.id = x.entry_id and ey.id = y.entry_id and t.id = ey.tournament_id and t.org_id = p_org
+    and ex.status = 'approved' and ey.status = 'approved'
     and y.rating_before is null and x.rating_before is not null
     and ex.tournament_id = ey.tournament_id and ex.discipline = ey.discipline
     and ey.competitor_id = x.opponent_id and y.opponent_id = ex.competitor_id
+    and y.my_score = x.opp_score and y.opp_score = x.my_score;
+
+  -- class matches (one combined class rating)
+  update class_matches x set rating_before = null, rating_after = null, opp_rating_before = null, opp_rating_after = null
+  from class_logs cl join competitors c on c.id = cl.competitor_id
+  where cl.id = x.class_log_id and c.org_id = p_org;
+
+  for m in
+    select x.id, x.opponent_id, x.my_score, x.opp_score, x.won, cl.competitor_id as cid
+    from class_matches x
+    join class_logs cl on cl.id = x.class_log_id
+    join competitors c on c.id = cl.competitor_id
+    where c.org_id = p_org and cl.status = 'approved'
+      and not exists (
+        select 1 from class_matches y join class_logs c2 on c2.id = y.class_log_id
+        where c2.status = 'approved' and c2.class_date = cl.class_date
+          and c2.competitor_id = x.opponent_id and y.opponent_id = cl.competitor_id
+          and y.my_score = x.opp_score and y.opp_score = x.my_score and y.won <> x.won
+          and y.id < x.id)
+    order by cl.class_date, cl.created_at, cl.id, x.round_no, x.id
+  loop
+    r := elo_step(m.cid, m.opponent_id, 'class', m.my_score, m.opp_score, m.won, 0.5);
+    update class_matches set rating_before = round(r[1], 1), rating_after = round(r[1] + r[3], 1),
+                             opp_rating_before = round(r[2], 1), opp_rating_after = round(r[2] - r[3], 1)
+      where id = m.id;
+  end loop;
+
+  update class_matches y set rating_before = x.opp_rating_before, rating_after = x.opp_rating_after,
+                             opp_rating_before = x.rating_before, opp_rating_after = x.rating_after
+  from class_matches x, class_logs cx, class_logs cy, competitors c
+  where cx.id = x.class_log_id and cy.id = y.class_log_id and c.id = cy.competitor_id and c.org_id = p_org
+    and cx.status = 'approved' and cy.status = 'approved'
+    and y.rating_before is null and x.rating_before is not null
+    and cx.class_date = cy.class_date
+    and cy.competitor_id = x.opponent_id and y.opponent_id = cx.competitor_id
     and y.my_score = x.opp_score and y.opp_score = x.my_score;
 
   delete from ratings where competitor_id in (select id from competitors where org_id = p_org);
@@ -310,7 +415,7 @@ create or replace function public.set_member_role(p_org uuid, p_user uuid, p_rol
 language plpgsql security definer set search_path = public as $$
 begin
   if not is_admin(p_org) then raise exception 'Only an admin can do that.'; end if;
-  if p_role not in ('admin', 'member') then raise exception 'Unknown role.'; end if;
+  if p_role not in ('admin', 'instructor', 'member') then raise exception 'Unknown role.'; end if;
   if p_user = auth.uid() and p_role <> 'admin' then raise exception 'You cannot remove your own admin access.'; end if;
   update members set role = p_role where org_id = p_org and user_id = p_user;
 end;
@@ -470,6 +575,51 @@ $$;
 -- Logging results
 -- ---------------------------------------------------------------------------
 
+-- Find an opponent by id, or reuse/create a placeholder by name + school. Used by tournament and class logging.
+create or replace function public.resolve_opponent(p_org uuid, m jsonb, p_round int) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare v_opp uuid;
+begin
+  if nullif(m->>'opponent_id', '') is not null then
+    select id into v_opp from competitors where id = (m->>'opponent_id')::uuid and org_id = p_org;
+    if v_opp is null then raise exception 'Opponent in match % not found.', p_round; end if;
+    return v_opp;
+  end if;
+  if length(trim(coalesce(m->'opponent'->>'first_name', ''))) = 0
+     or length(trim(coalesce(m->'opponent'->>'last_name', ''))) = 0 then
+    raise exception 'Opponent name is missing in match %.', p_round;
+  end if;
+  select id into v_opp from competitors
+    where org_id = p_org
+      and lower(first_name) = lower(trim(m->'opponent'->>'first_name'))
+      and lower(last_name)  = lower(trim(m->'opponent'->>'last_name'))
+      and lower(school)     = lower(coalesce(trim(m->'opponent'->>'school'), ''))
+    order by is_placeholder limit 1;
+  if v_opp is null then
+    insert into competitors (org_id, first_name, last_name, school, state, is_placeholder, created_by)
+      values (p_org, trim(m->'opponent'->>'first_name'), trim(m->'opponent'->>'last_name'),
+              coalesce(trim(m->'opponent'->>'school'), ''),
+              upper(coalesce(trim(m->'opponent'->>'state'), '')), true, auth.uid())
+      returning id into v_opp;
+  end if;
+  return v_opp;
+end;
+$$;
+
+-- Win/loss from the score; a tied score needs "won" (sudden victory / penalty).
+create or replace function public.match_won(m jsonb, p_round int) returns boolean
+language plpgsql immutable as $$
+declare v_my int := (m->>'my_score')::int; v_their int := (m->>'opp_score')::int;
+begin
+  if v_my is null or v_their is null then raise exception 'Scores are missing in match %.', p_round; end if;
+  if v_my > v_their then return true; end if;
+  if v_my < v_their then return false; end if;
+  if (m->>'won') is null then raise exception 'Match % is tied: say who won.', p_round; end if;
+  return (m->>'won')::boolean;
+end;
+$$;
+
+-- Results from families start as 'pending' until an instructor approves them; instructors' and admins' own entries are approved.
 -- p: {
 --   entry_id?               -- set to replace an existing entry (edit)
 --   competitor_id,
@@ -493,10 +643,13 @@ declare
   v_round int := 0;
   v_disc text := p->>'discipline';
   v_team boolean := coalesce((p->>'team')::boolean, false);
+  v_status text; v_reviewer uuid; v_reviewed timestamptz;
 begin
   select org_id into v_org from competitors where id = v_comp and not is_placeholder;
   if v_org is null then raise exception 'Competitor not found.'; end if;
   if not can_manage(v_comp) then raise exception 'You can only log results for your own competitors.'; end if;
+  if is_approver(v_org) then v_status := 'approved'; v_reviewer := auth.uid(); v_reviewed := now();
+  else v_status := 'pending'; end if;
   if v_disc not in ('sparring', 'combat') then raise exception 'Pick sparring or combat sparring.'; end if;
   if jsonb_array_length(coalesce(p->'matches', '[]'::jsonb)) = 0 then raise exception 'Add at least one match.'; end if;
 
@@ -528,7 +681,8 @@ begin
     update entries set tournament_id = v_tid, discipline = v_disc, team = v_team,
       team_name = coalesce(trim(p->>'team_name'), ''), champion = coalesce((p->>'champion')::boolean, true),
       division = coalesce(trim(p->>'division'), ''), placement = nullif(p->>'placement', '')::int,
-      ring_size = nullif(p->>'ring_size', '')::int
+      ring_size = nullif(p->>'ring_size', '')::int,
+      status = v_status, review_note = '', reviewed_by = v_reviewer, reviewed_at = v_reviewed
     where id = v_entry;
   else
     if exists (select 1 from entries where competitor_id = v_comp and tournament_id = v_tid
@@ -536,49 +690,21 @@ begin
       raise exception 'This event is already logged for that tournament. Edit the existing result instead.';
     end if;
     insert into entries (competitor_id, tournament_id, discipline, team, team_name, champion, division,
-                         placement, ring_size, created_by)
+                         placement, ring_size, created_by, status, submission_id, reviewed_by, reviewed_at)
       values (v_comp, v_tid, v_disc, v_team, coalesce(trim(p->>'team_name'), ''),
               coalesce((p->>'champion')::boolean, true), coalesce(trim(p->>'division'), ''),
-              nullif(p->>'placement', '')::int, nullif(p->>'ring_size', '')::int, auth.uid())
+              nullif(p->>'placement', '')::int, nullif(p->>'ring_size', '')::int, auth.uid(),
+              v_status, nullif(p->>'submission_id', '')::uuid, v_reviewer, v_reviewed)
       returning id into v_entry;
   end if;
 
   for v_m in select * from jsonb_array_elements(p->'matches') loop
     v_round := v_round + 1;
-    -- opponent: existing profile, or a new placeholder (reusing one with the same name + school)
-    if nullif(v_m->>'opponent_id', '') is not null then
-      select id into v_opp from competitors where id = (v_m->>'opponent_id')::uuid and org_id = v_org;
-      if v_opp is null then raise exception 'Opponent in match % not found.', v_round; end if;
-    else
-      if length(trim(coalesce(v_m->'opponent'->>'first_name', ''))) = 0
-         or length(trim(coalesce(v_m->'opponent'->>'last_name', ''))) = 0 then
-        raise exception 'Opponent name is missing in match %.', v_round;
-      end if;
-      select id into v_opp from competitors
-        where org_id = v_org
-          and lower(first_name) = lower(trim(v_m->'opponent'->>'first_name'))
-          and lower(last_name)  = lower(trim(v_m->'opponent'->>'last_name'))
-          and lower(school)     = lower(coalesce(trim(v_m->'opponent'->>'school'), ''))
-        order by is_placeholder limit 1;
-      if v_opp is null then
-        insert into competitors (org_id, first_name, last_name, school, state, is_placeholder, created_by)
-          values (v_org, trim(v_m->'opponent'->>'first_name'), trim(v_m->'opponent'->>'last_name'),
-                  coalesce(trim(v_m->'opponent'->>'school'), ''),
-                  upper(coalesce(trim(v_m->'opponent'->>'state'), '')), true, auth.uid())
-          returning id into v_opp;
-      end if;
-    end if;
+    v_opp := resolve_opponent(v_org, v_m, v_round);
     if v_opp = v_comp then raise exception 'A competitor cannot be their own opponent (match %).', v_round; end if;
-
     v_my := (v_m->>'my_score')::int;
     v_their := (v_m->>'opp_score')::int;
-    if v_my is null or v_their is null then raise exception 'Scores are missing in match %.', v_round; end if;
-    if v_my > v_their then v_won := true;
-    elsif v_my < v_their then v_won := false;
-    else
-      v_won := (v_m->>'won')::boolean;  -- tied score: decided by sudden victory / penalty
-      if v_won is null then raise exception 'Match % is tied: say who won.', v_round; end if;
-    end if;
+    v_won := match_won(v_m, v_round);
 
     insert into matches (entry_id, round_no, opponent_id, my_score, opp_score, won,
                          team_score, opp_team_score, team_won)
@@ -659,6 +785,7 @@ create table if not exists public.challenge_completions (
   created_at     timestamptz not null default now(),
   unique (competitor_id, week_start)
 );
+alter table public.challenge_completions add column if not exists class_log_id uuid references public.class_logs(id) on delete cascade;
 
 alter table public.challenges            enable row level security;
 alter table public.challenge_completions enable row level security;
@@ -676,20 +803,29 @@ language sql stable as $$
   select date_trunc('week', (now() at time zone 'America/Indiana/Indianapolis'))::date;
 $$;
 
-create or replace function public.current_challenge(p_org uuid)
+-- The challenge for the week starting p_week (a Monday). Rotates through active challenges in order.
+create or replace function public.challenge_for_week(p_org uuid, p_week date)
 returns table (id uuid, title text, description text, xp int, week_start date)
 language plpgsql stable security definer set search_path = public as $$
-declare v_n int; v_week date := current_week_start(); v_i int;
+declare v_n int; v_i int;
 begin
-  if not is_member(p_org) then raise exception 'You are not part of this school.'; end if;
   select count(*) into v_n from challenges c where c.org_id = p_org and c.active;
   if v_n = 0 then return; end if;
-  v_i := (((v_week - date '2026-11-23') / 7) % v_n + v_n) % v_n;
+  v_i := (((p_week - date '2026-11-23') / 7) % v_n + v_n) % v_n;
   return query
-    select c.id, c.title, c.description, c.xp, v_week from challenges c
+    select c.id, c.title, c.description, c.xp, p_week from challenges c
     where c.org_id = p_org and c.active
     order by c.sort_order, c.created_at, c.id
     offset v_i limit 1;
+end;
+$$;
+
+create or replace function public.current_challenge(p_org uuid)
+returns table (id uuid, title text, description text, xp int, week_start date)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not is_member(p_org) then raise exception 'You are not part of this school.'; end if;
+  return query select * from challenge_for_week(p_org, current_week_start());
 end;
 $$;
 
@@ -699,7 +835,7 @@ declare v_org uuid; v_ch record;
 begin
   select org_id into v_org from competitors where id = p_competitor and not is_placeholder;
   if v_org is null then raise exception 'Competitor not found.'; end if;
-  if not can_manage(p_competitor) then raise exception 'You can only log challenges for your own competitors.'; end if;
+  if not is_approver(v_org) then raise exception 'Log the challenge as part of a class; an instructor approves it.'; end if;
   select * into v_ch from current_challenge(v_org);
   if v_ch.id is null then raise exception 'There is no challenge this week.'; end if;
   if exists (select 1 from challenge_completions where competitor_id = p_competitor and week_start = v_ch.week_start) then
@@ -761,18 +897,18 @@ language plpgsql security definer set search_path = public as $$
 begin
   if exists (select 1 from challenges where org_id = p_org) then return; end if;
   insert into challenges (org_id, title, description, xp, sort_order) values
-    (p_org, 'Combo king', 'Land a clean jab, cross, round kick on the target 10 times in a row without dropping your guard.', 50, 1),
-    (p_org, 'Light feet', 'Stay on the balls of your feet for a full 2-minute round. No flat-footing, no crossing your feet.', 50, 2),
-    (p_org, 'Head hunter', 'Score 5 controlled head kicks in partner drills, each one chambered and pulled back.', 50, 3),
-    (p_org, 'Counter strike', 'Block or slip your partner''s attack and counter within one second, 10 times.', 50, 4),
-    (p_org, 'Edge of the ring', 'Spar a round where you get pushed to the edge and angle back to the center every time without stepping out.', 50, 5),
-    (p_org, 'Both sides', 'Throw every technique in a 2-minute drill from your weaker side.', 50, 6),
-    (p_org, 'Jump in', 'Land 3 jumping kicks to the body in partner drills, both feet off the floor.', 50, 7),
-    (p_org, 'Ring respect', 'Bow in, shake hands and thank every partner you spar this week. Your instructor will notice.', 50, 8),
-    (p_org, 'Combat control', 'Finish a combat sparring round with zero illegal strikes and no dropped weapon.', 50, 9),
-    (p_org, 'Two-minute engine', 'Keep moving and throwing for a full 2-minute round. No resting, no backing out of the ring.', 50, 10),
-    (p_org, 'Coach for a round', 'Help a newer student with one technique during class until they can do it on their own.', 50, 11),
-    (p_org, 'Shutout drill', 'Win a drill round against a partner without letting them score.', 50, 12);
+    (p_org, 'Head hunter', 'Score a head kick in a sparring match.', 50, 1),
+    (p_org, 'Combat crack', 'Score a 2-point strike to the head or weapon arm in a combat sparring match.', 50, 2),
+    (p_org, 'Air time', 'Score a jumping kick in a sparring match: both feet off the floor.', 50, 3),
+    (p_org, 'Counter strike', 'Score a point right after blocking or slipping your opponent''s attack in a sparring match.', 50, 4),
+    (p_org, 'No drop', 'Finish a combat sparring match without dropping your weapon and with no warnings.', 50, 5),
+    (p_org, 'Shutout', 'Win a sparring or combat match without giving up a point.', 50, 6),
+    (p_org, 'Combo point', 'Score with a combination of 3 or more techniques in a sparring match.', 50, 7),
+    (p_org, 'Combat jump', 'Score with a jumping strike in a combat sparring match.', 50, 8),
+    (p_org, 'Center ring', 'Finish a sparring match without stepping out of bounds once.', 50, 9),
+    (p_org, 'Comeback', 'Win a sparring or combat match after being behind on points.', 50, 10),
+    (p_org, 'Parry and score', 'Parry your opponent''s weapon and score on the counter in a combat sparring match.', 50, 11),
+    (p_org, 'Clean fight', 'Win a sparring match with no warnings or penalty points.', 50, 12);
 end;
 $$;
 
@@ -810,13 +946,164 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- Approvals: tournament days and class logs
+-- ---------------------------------------------------------------------------
+
+-- Swap the original practice-drill starter challenges for match-based ones, if a school still has them unchanged.
+do $$
+declare o record;
+begin
+  for o in select org_id from challenges group by org_id
+           having count(*) = 12 and bool_and(title in ('Combo king', 'Light feet', 'Head hunter', 'Counter strike',
+             'Edge of the ring', 'Both sides', 'Jump in', 'Ring respect', 'Combat control', 'Two-minute engine',
+             'Coach for a round', 'Shutout drill'))
+  loop
+    delete from challenges where org_id = o.org_id;
+    perform add_starter_challenges(o.org_id);
+  end loop;
+end $$;
+
+-- A whole tournament day at once. p: {competitor_id, tournament: {...}, events: [ {discipline, team, ...matches} ]}
+create or replace function public.log_tournament_day(p jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare v_sub uuid := gen_random_uuid(); v_ev jsonb; v_first boolean := true; v_tid uuid; v_entry uuid;
+begin
+  if jsonb_array_length(coalesce(p->'events', '[]'::jsonb)) = 0 then raise exception 'Add at least one event.'; end if;
+  for v_ev in select * from jsonb_array_elements(p->'events') loop
+    v_entry := log_entry(v_ev || jsonb_build_object(
+      'competitor_id', p->>'competitor_id',
+      'tournament', case when v_first then p->'tournament' else jsonb_build_object('id', v_tid) end,
+      'submission_id', v_sub));
+    if v_first then select tournament_id into v_tid from entries where id = v_entry; v_first := false; end if;
+  end loop;
+  return v_sub;
+end;
+$$;
+
+-- Instructor/admin: approve or reject tournament results (one event, or a whole day by passing all its ids).
+create or replace function public.review_entries(p_ids uuid[], p_approve boolean, p_note text) returns void
+language plpgsql security definer set search_path = public as $$
+declare v_org uuid;
+begin
+  select distinct c.org_id into v_org from entries e join competitors c on c.id = e.competitor_id where e.id = any(p_ids) limit 1;
+  if v_org is null then raise exception 'Nothing to review.'; end if;
+  if not is_approver(v_org) then raise exception 'Only an instructor can approve results.'; end if;
+  if exists (select 1 from entries e join competitors c on c.id = e.competitor_id where e.id = any(p_ids) and c.org_id <> v_org) then
+    raise exception 'Those results belong to different schools.';
+  end if;
+  update entries set status = case when p_approve then 'approved' else 'rejected' end,
+    review_note = coalesce(trim(p_note), ''), reviewed_by = auth.uid(), reviewed_at = now()
+  where id = any(p_ids);
+  perform recompute_ratings(v_org);
+end;
+$$;
+
+-- A class the student attended, with any in-class matches and whether they did the weekly challenge.
+-- p: {class_log_id?, competitor_id, class_date, challenge_done, note,
+--     matches: [{opponent_id | opponent: {...}, discipline, my_score, opp_score, won?}]}
+create or replace function public.log_class(p jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  v_comp uuid := (p->>'competitor_id')::uuid; v_org uuid; v_id uuid := nullif(p->>'class_log_id', '')::uuid;
+  v_date date := (p->>'class_date')::date; v_m jsonb; v_round int := 0; v_opp uuid; v_approved boolean;
+begin
+  select org_id into v_org from competitors where id = v_comp and not is_placeholder;
+  if v_org is null then raise exception 'Competitor not found.'; end if;
+  if not can_manage(v_comp) then raise exception 'You can only log classes for your own competitors.'; end if;
+  if v_date is null then raise exception 'Pick the class date.'; end if;
+  if v_date > (now() at time zone 'America/Indiana/Indianapolis')::date then raise exception 'That date is in the future.'; end if;
+  v_approved := is_approver(v_org);
+
+  if v_id is not null then
+    if not exists (select 1 from class_logs where id = v_id and competitor_id = v_comp) then raise exception 'That class was not found.'; end if;
+    delete from class_matches where class_log_id = v_id;
+    delete from challenge_completions where class_log_id = v_id;
+    update class_logs set class_date = v_date, challenge_done = coalesce((p->>'challenge_done')::boolean, false),
+      note = coalesce(trim(p->>'note'), ''), status = case when v_approved then 'approved' else 'pending' end,
+      review_note = '', reviewed_by = case when v_approved then auth.uid() end, reviewed_at = case when v_approved then now() end
+    where id = v_id;
+  else
+    if exists (select 1 from class_logs where competitor_id = v_comp and class_date = v_date) then
+      raise exception 'That class is already logged. Edit it instead.';
+    end if;
+    insert into class_logs (competitor_id, class_date, challenge_done, note, status, reviewed_by, reviewed_at, created_by)
+      values (v_comp, v_date, coalesce((p->>'challenge_done')::boolean, false), coalesce(trim(p->>'note'), ''),
+              case when v_approved then 'approved' else 'pending' end,
+              case when v_approved then auth.uid() end, case when v_approved then now() end, auth.uid())
+      returning id into v_id;
+  end if;
+
+  for v_m in select * from jsonb_array_elements(coalesce(p->'matches', '[]'::jsonb)) loop
+    v_round := v_round + 1;
+    v_opp := resolve_opponent(v_org, v_m, v_round);
+    if v_opp = v_comp then raise exception 'A student cannot be their own opponent (match %).', v_round; end if;
+    insert into class_matches (class_log_id, round_no, discipline, opponent_id, my_score, opp_score, won)
+      values (v_id, v_round, coalesce(nullif(v_m->>'discipline', ''), 'sparring'), v_opp,
+              (v_m->>'my_score')::int, (v_m->>'opp_score')::int, match_won(v_m, v_round));
+  end loop;
+
+  if v_approved then perform credit_class(v_id); end if;
+  perform recompute_ratings(v_org);
+  return v_id;
+end;
+$$;
+
+-- When a class is approved, credit the weekly challenge for that class's week (once per week).
+create or replace function public.credit_class(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare l record; v_org uuid; ch record; v_week date;
+begin
+  select * into l from class_logs where id = p_id;
+  delete from challenge_completions where class_log_id = p_id;
+  if l.status <> 'approved' or not l.challenge_done then return; end if;
+  select org_id into v_org from competitors where id = l.competitor_id;
+  v_week := date_trunc('week', l.class_date)::date;
+  select * into ch from challenge_for_week(v_org, v_week);
+  if ch.id is null then return; end if;
+  insert into challenge_completions (competitor_id, challenge_id, title, xp, week_start, created_by, class_log_id)
+    values (l.competitor_id, ch.id, ch.title, ch.xp, v_week, l.created_by, p_id)
+    on conflict (competitor_id, week_start) do nothing;
+end;
+$$;
+
+create or replace function public.review_class(p_ids uuid[], p_approve boolean, p_note text) returns void
+language plpgsql security definer set search_path = public as $$
+declare v_org uuid; v_id uuid;
+begin
+  select distinct c.org_id into v_org from class_logs l join competitors c on c.id = l.competitor_id where l.id = any(p_ids) limit 1;
+  if v_org is null then raise exception 'Nothing to review.'; end if;
+  if not is_approver(v_org) then raise exception 'Only an instructor can approve classes.'; end if;
+  if exists (select 1 from class_logs l join competitors c on c.id = l.competitor_id where l.id = any(p_ids) and c.org_id <> v_org) then
+    raise exception 'Those classes belong to different schools.';
+  end if;
+  update class_logs set status = case when p_approve then 'approved' else 'rejected' end,
+    review_note = coalesce(trim(p_note), ''), reviewed_by = auth.uid(), reviewed_at = now()
+  where id = any(p_ids);
+  foreach v_id in array p_ids loop perform credit_class(v_id); end loop;
+  perform recompute_ratings(v_org);
+end;
+$$;
+
+create or replace function public.delete_class_log(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare v_comp uuid; v_org uuid;
+begin
+  select l.competitor_id, c.org_id into v_comp, v_org from class_logs l join competitors c on c.id = l.competitor_id where l.id = p_id;
+  if v_comp is null then raise exception 'That class was not found.'; end if;
+  if not can_manage(v_comp) then raise exception 'You can only delete your own classes.'; end if;
+  delete from class_logs where id = p_id;
+  perform recompute_ratings(v_org);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Permissions: signed-in users may call the functions; nobody may write tables directly.
 -- ---------------------------------------------------------------------------
 
 revoke all on all tables in schema public from anon, authenticated;
 grant select on public.orgs, public.members, public.competitors, public.competitor_private,
   public.competitor_managers, public.tournaments, public.entries, public.matches, public.ratings,
-  public.challenges, public.challenge_completions
+  public.challenges, public.challenge_completions, public.class_logs, public.class_matches
   to authenticated;
 
 revoke all on all functions in schema public from public, anon;
@@ -828,6 +1115,8 @@ grant execute on function
   public.merge_competitor(uuid, uuid), public.log_entry(jsonb), public.delete_entry(uuid),
   public.delete_competitor(uuid), public.current_week_start(), public.current_challenge(uuid),
   public.log_challenge(uuid), public.delete_challenge_completion(uuid), public.save_challenge(jsonb),
-  public.delete_challenge(uuid), public.seed_starter_challenges(uuid), public.set_title(uuid, text)
+  public.delete_challenge(uuid), public.seed_starter_challenges(uuid), public.set_title(uuid, text),
+  public.is_approver(uuid), public.log_tournament_day(jsonb), public.review_entries(uuid[], boolean, text),
+  public.log_class(jsonb), public.review_class(uuid[], boolean, text), public.delete_class_log(uuid)
   to authenticated;
 -- recompute_ratings and setup_org are only run by the functions above or from the SQL editor.

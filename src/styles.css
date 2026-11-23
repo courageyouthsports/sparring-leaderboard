@@ -283,3 +283,23 @@ input:focus, select:focus { border-color: var(--ink); outline: none; box-shadow:
 /* ---- Admin challenges ---- */
 .admin-list li.inactive { opacity: .6; }
 .challenge-form { width: 100%; }
+
+/* ---- Approvals and classes ---- */
+.nav .count { display: inline-block; min-width: 1.3rem; margin-left: .35rem; padding: 0 .35rem; border-radius: 99px; background: #FF5A6E; color: #fff; font-size: .8rem; text-align: center; line-height: 1.3rem; }
+.status { font-size: .8rem; font-weight: 600; padding: .1rem .55rem; border-radius: 99px; white-space: nowrap; }
+.status-pending { background: var(--note); border: 1px solid var(--note-line); }
+.status-rejected { color: var(--bad); border: 1px solid currentColor; }
+.challenge-pending { font-weight: 600; color: #FFD27A; }
+.challenge-mini { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--red); border-radius: var(--radius); padding: .75rem 1rem; }
+.challenge-mini p { margin: .25rem 0 0; }
+.big-check { font-weight: 600; font-size: 1.05rem; }
+.event-block { border-top: 2px solid var(--line) !important; padding-top: 1.25rem !important; }
+.log legend { display: flex; align-items: baseline; gap: 1rem; width: 100%; }
+.legend-action { margin-left: auto; font-family: var(--body); font-size: .9rem; }
+.add-event { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: 1.25rem; }
+.kind-tag { font-size: .8rem; font-weight: 600; color: var(--muted); border: 1px solid var(--line); padding: .1rem .55rem; border-radius: 99px; }
+.review-event { margin-top: .6rem; }
+.review-event + .review-event { border-top: 1px solid var(--line); padding-top: .6rem; }
+.review-actions { margin-top: .9rem; }
+.inline-chip { margin-left: .6rem; }
+.log fieldset > input { max-width: none; }

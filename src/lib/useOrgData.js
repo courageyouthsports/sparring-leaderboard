@@ -17,7 +17,7 @@ export function useOrgData(session) {
       const membership = mine[0];
       const org = membership.org_id;
 
-      const [orgRow, members, competitors, ratings, tournaments, entries, matches, managed, privateRows, challenges, completions, current] = await Promise.all([
+      const [orgRow, members, competitors, ratings, tournaments, entries, matches, managed, privateRows, challenges, completions, current, classLogs, classMatches] = await Promise.all([
         supabase.from('orgs').select('*').eq('id', org).single().then((r) => { if (r.error) throw new Error(r.error.message); return r.data; }),
         fetchAll('members', 'user_id, role, display_name, created_at', (q) => q.eq('org_id', org)),
         fetchAll('competitors', '*', (q) => q.eq('org_id', org)),
@@ -30,6 +30,8 @@ export function useOrgData(session) {
         fetchAll('challenges', '*', (q) => q.eq('org_id', org).order('sort_order')),
         fetchAll('challenge_completions'),
         supabase.rpc('current_challenge', { p_org: org }).then((r) => { if (r.error) throw new Error(r.error.message); return r.data; }),
+        fetchAll('class_logs'),
+        fetchAll('class_matches'),
       ]);
 
       const inOrg = new Set(competitors.map((c) => c.id));
@@ -47,6 +49,9 @@ export function useOrgData(session) {
         challenges,
         completions: completions.filter((cc) => inOrg.has(cc.competitor_id)),
         challenge: (Array.isArray(current) ? current[0] : current) || null,   // this week's challenge
+        classLogs: classLogs.filter((l) => inOrg.has(l.competitor_id)),
+        classMatches,
+        userId,
       };
       setState({ loading: false, error: null, membership, data: indexData(raw) });
     } catch (e) {

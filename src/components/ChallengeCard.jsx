@@ -1,15 +1,15 @@
-import { useState } from 'react';
-import { rpc } from '../lib/supabase.js';
 import { weeklyDone } from '../lib/scoring.js';
-import { ErrorNote } from './ui.jsx';
 
+const mondayOf = (d) => {
+  const x = new Date(`${d}T12:00:00`);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x.toLocaleDateString('en-CA');
+};
 const short = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-// This week's in-class challenge, with a button for each of the family's competitors.
-export default function ChallengeCard({ data, competitors, reload, isAdmin }) {
+// This week's challenge. Students complete it in a class match and log it with that class.
+export default function ChallengeCard({ data, competitors, isAdmin }) {
   const ch = data.challenge;
-  const [busy, setBusy] = useState(null);
-  const [error, setError] = useState(null);
 
   if (!ch) {
     return isAdmin ? (
@@ -23,12 +23,6 @@ export default function ChallengeCard({ data, competitors, reload, isAdmin }) {
   const end = new Date(`${start}T12:00:00`);
   end.setDate(end.getDate() + 6);
 
-  async function run(key, fn) {
-    setBusy(key); setError(null);
-    try { await fn(); await reload(); } catch (e) { setError(e.message); }
-    setBusy(null);
-  }
-
   return (
     <section className="challenge">
       <div className="challenge-top">
@@ -41,23 +35,19 @@ export default function ChallengeCard({ data, competitors, reload, isAdmin }) {
         <div className="challenge-actions">
           {competitors.map((c) => {
             const done = weeklyDone(data, c.id);
-            return done ? (
-              <span key={c.id} className="challenge-done">
-                {c.first_name} completed it
-                <button className="link" disabled={busy === c.id}
-                  onClick={() => run(c.id, () => rpc('delete_challenge_completion', { p_id: done.id }))}>Undo</button>
-              </span>
-            ) : (
-              <button key={c.id} className="primary" disabled={busy === c.id}
-                onClick={() => run(c.id, () => rpc('log_challenge', { p_competitor: c.id }))}>
-                {busy === c.id ? 'Saving…' : competitors.length > 1 ? `${c.first_name} completed it` : 'Mark as completed'}
-              </button>
+            const pending = data.classLogs.find((l) => l.competitor_id === c.id && l.challenge_done && l.status === 'pending'
+              && mondayOf(l.class_date) === start);
+            if (done) return <span key={c.id} className="challenge-done">{c.first_name} completed it</span>;
+            if (pending) return <span key={c.id} className="challenge-pending">{c.first_name}: waiting for approval</span>;
+            return (
+              <a key={c.id} className="button primary" href={`#/class?competitor=${c.id}`}>
+                {competitors.length > 1 ? `Log ${c.first_name}’s class` : 'Log a class'}
+              </a>
             );
           })}
         </div>
       )}
-      <ErrorNote error={error} />
-      <p className="small muted">Completed in class this week? Log it for {competitors.length > 1 ? 'each student' : 'the XP and this week’s badge'}. Honor system.</p>
+      <p className="small muted">Do it during a sparring or combat match in class, then log the class and tick the challenge. It counts once your instructor approves.</p>
     </section>
   );
 }

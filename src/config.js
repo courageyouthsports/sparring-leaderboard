@@ -36,6 +36,9 @@ export const XP = {
   shutout: 20,        // won without giving up a point
   place: { 1: 50, 2: 35, 3: 20 },
   badge: 25,          // each badge earned
+  classAttended: 10,  // each approved class
+  classMatch: 5,      // each in-class match
+  classWin: 5,        // each in-class match won
 };
 
 // --- ATA ranking points (2026-27 rules) -----------------------------------
@@ -64,7 +67,7 @@ export const BELTS = [
   'Red/Black', '1st Degree', '2nd Degree', '3rd Degree', '4th Degree', '5th Degree',
 ];
 export const isBlackBelt = (belt) => /Degree/.test(belt || '');
-export const DISCIPLINES = { sparring: 'Sparring', combat: 'Combat sparring' };
+export const DISCIPLINES = { sparring: 'Sparring', combat: 'Combat sparring', class: 'Class sparring' };
 
 // --- Divisions (ATA 2026-27 rules) ----------------------------------------
 // ATA competition age = age on December 31 of the season's first year.

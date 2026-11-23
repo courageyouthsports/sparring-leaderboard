@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { DISCIPLINES, PROVISIONAL_MATCHES, TIER_NAMES, RATING_TIERS, TITLE_NAMES } from '../config.js';
 import {
-  badgesFor, completionsOf, entriesOf, fullName, nextTier, ratingHistory, ratingOf, ratingTier, recordOf, seasonLabel,
+  approvedClassesOf, badgesFor, classLogsOf, completionsOf, entriesOf, fullName, nextTier, ratingHistory, ratingOf, ratingTier, recordOf, seasonLabel,
   seasonPoints, seasonYear, teamRecordOf, todayStr, weeklyDone,
 } from '../lib/scoring.js';
 import { achievementsFor } from '../lib/achievements.js';
@@ -11,7 +11,7 @@ import { Delta, Emblem, ErrorNote, Score, Sparkline, fmtDate, ordinal } from '..
 
 const EVENT_NAMES = { sparring: 'Sparring', combat: 'Combat sparring', 'team-sparring': 'Team sparring', 'team-combat': 'Team combat' };
 
-export default function Profile({ data, id, reload, isAdmin }) {
+export default function Profile({ data, id, reload, isAdmin, isApprover, params }) {
   const c = data.competitorById.get(id);
   const [error, setError] = useState(null);
   if (!c) return <p>That competitor wasn’t found. <a href="#/">Back to rankings</a></p>;
@@ -35,10 +35,18 @@ export default function Profile({ data, id, reload, isAdmin }) {
   return (
     <>
       <MeCard data={data} c={c} link={false} />
-      {(mine || canManage) && <p><a className="button primary" href={`#/log?competitor=${id}`}>Log a result</a></p>}
+      {canManage && (
+        <p className="actions">
+          <a className="button primary" href={`#/class?competitor=${id}`}>Log a class</a>
+          <a className="button" href={`#/log?competitor=${id}`}>Log a tournament</a>
+        </p>
+      )}
+      {params?.sent && !isApprover && <p className="note">Sent. It will count once an instructor approves it.</p>}
+
+      {(canManage || isApprover) && <Waiting data={data} id={id} canManage={canManage} reload={reload} />}
 
       <section className="tiers">
-        {['sparring', 'combat'].map((d) => <RatingCard key={d} data={data} id={id} discipline={d} />)}
+        {['sparring', 'combat', 'class'].map((d) => <RatingCard key={d} data={data} id={id} discipline={d} />)}
       </section>
 
       <Achievements data={data} c={c} canManage={canManage} reload={reload} />
@@ -129,6 +137,7 @@ export default function Profile({ data, id, reload, isAdmin }) {
           </ul>
         )}
       </section>
+      <ClassHistory data={data} id={id} canManage={canManage} reload={reload} />
     </>
   );
 }
@@ -139,7 +148,7 @@ function RatingCard({ data, id, discipline }) {
     return (
       <div className="tier-card faded">
         <Emblem track="competitive" tier="bronze" size={72} />
-        <div><h2>{DISCIPLINES[discipline]}</h2><p className="muted">No matches yet. Everyone starts at 1000.</p></div>
+        <div><h2>{DISCIPLINES[discipline]}</h2><p className="muted">{discipline === 'class' ? 'No approved class matches yet.' : 'No matches yet.'} Everyone starts at 1000.</p></div>
       </div>
     );
   }
@@ -232,6 +241,102 @@ function Achievements({ data, c, canManage, reload }) {
             </div>
             <span className="small">{a.desc}</span>
             {!a.done && a.goal > 1 && <span className="progress"><span style={{ width: `${a.pct}%` }} /></span>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+// Submissions that haven't counted yet: waiting for an instructor, or sent back with a note.
+function Waiting({ data, id, canManage, reload }) {
+  const entries = data.unapproved.filter((e) => e.competitor_id === id);
+  const classes = classLogsOf(data, id).filter((l) => l.status !== 'approved');
+  const [error, setError] = useState(null);
+  if (entries.length + classes.length === 0) return null;
+
+  async function del(fn, msg) {
+    if (!window.confirm(msg)) return;
+    try { await fn(); await reload(); } catch (e) { setError(e.message); }
+  }
+  const tag = (st) => <span className={`status status-${st}`}>{st === 'pending' ? 'Waiting for approval' : 'Sent back'}</span>;
+
+  return (
+    <section>
+      <h2>Not counted yet</h2>
+      <ErrorNote error={error} />
+      <ul className="results">
+        {entries.map((e) => (
+          <li key={e.id} className="result">
+            <div className="result-head">
+              <div><b>{e.tournament.name}</b> <span className="muted">{DISCIPLINES[e.discipline]}{e.team ? ' (team)' : ''}{e.placement ? `, ${ordinal(e.placement)}` : ''}</span></div>
+              {tag(e.status)}
+            </div>
+            {e.review_note && <p className="small note">Instructor: {e.review_note}</p>}
+            <p className="small muted">{e.matches.map((m) => `${m.my_score}–${m.opp_score}`).join(', ')}</p>
+            {canManage && (
+              <div className="row-actions">
+                <a href={`#/log?entry=${e.id}`}>{e.status === 'rejected' ? 'Fix and resend' : 'Edit'}</a>
+                <button className="link danger" onClick={() => del(() => rpc('delete_entry', { p_entry: e.id }), 'Delete this result?')}>Delete</button>
+              </div>
+            )}
+          </li>
+        ))}
+        {classes.map((l) => (
+          <li key={l.id} className="result">
+            <div className="result-head">
+              <div><b>Class</b> <span className="muted">{fmtDate(l.class_date)}{l.challenge_done ? ', weekly challenge' : ''}, {l.matches.length} match{l.matches.length === 1 ? '' : 'es'}</span></div>
+              {tag(l.status)}
+            </div>
+            {l.review_note && <p className="small note">Instructor: {l.review_note}</p>}
+            {canManage && (
+              <div className="row-actions">
+                <a href={`#/class?class=${l.id}`}>{l.status === 'rejected' ? 'Fix and resend' : 'Edit'}</a>
+                <button className="link danger" onClick={() => del(() => rpc('delete_class_log', { p_id: l.id }), 'Delete this class?')}>Delete</button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ClassHistory({ data, id, canManage, reload }) {
+  const logs = approvedClassesOf(data, id);
+  const [error, setError] = useState(null);
+  if (logs.length === 0) return null;
+  async function del(lid) {
+    if (!window.confirm('Delete this class? Its XP and any challenge credit go with it.')) return;
+    try { await rpc('delete_class_log', { p_id: lid }); await reload(); } catch (e) { setError(e.message); }
+  }
+  return (
+    <section>
+      <h2>Classes <span className="muted">{logs.length}</span></h2>
+      <ErrorNote error={error} />
+      <ul className="results">
+        {logs.map((l) => (
+          <li key={l.id} className="result">
+            <div className="result-head">
+              <div><b>{fmtDate(l.class_date)}</b>{l.challenge_done && <span className="weekly-chip inline-chip">Weekly challenge</span>}</div>
+            </div>
+            {l.matches.length === 0 ? <p className="small muted">Attended</p> : (
+              <ul className="matches">
+                {l.matches.map((m) => (
+                  <li key={m.id}>
+                    <Score mine={m.my_score} theirs={m.opp_score} won={m.won} />
+                    <span className="vs">vs <a href={`#/c/${m.opponent_id}`}>{fullName(data.competitorById.get(m.opponent_id))}</a> <span className="muted">({m.discipline})</span></span>
+                    <Delta before={m.rating_before} after={m.rating_after} />
+                  </li>
+                ))}
+              </ul>
+            )}
+            {canManage && (
+              <div className="row-actions">
+                <a href={`#/class?class=${l.id}`}>Edit</a>
+                <button className="link danger" onClick={() => del(l.id)}>Delete</button>
+              </div>
+            )}
           </li>
         ))}
       </ul>

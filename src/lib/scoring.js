@@ -29,15 +29,23 @@ export function indexData(raw) {
     matchesByEntry.get(m.entry_id).push(m);
   }
   for (const list of matchesByEntry.values()) list.sort((a, b) => a.round_no - b.round_no);
-  const entries = raw.entries
-    .map((e) => ({ ...e, tournament: tournaments.get(e.tournament_id), matches: matchesByEntry.get(e.id) || [] }))
+  const allEntries = raw.entries
+    .map((e) => ({ ...e, status: e.status || 'approved', tournament: tournaments.get(e.tournament_id), matches: matchesByEntry.get(e.id) || [] }))
     .filter((e) => e.tournament)
-    .sort((a, b) => b.tournament.event_date.localeCompare(a.tournament.event_date) || b.created_at.localeCompare(a.created_at));
-  const entriesByCompetitor = new Map();
-  for (const e of entries) {
-    if (!entriesByCompetitor.has(e.competitor_id)) entriesByCompetitor.set(e.competitor_id, []);
-    entriesByCompetitor.get(e.competitor_id).push(e);
-  }
+    .sort((a, b) => b.tournament.event_date.localeCompare(a.tournament.event_date) || String(b.created_at).localeCompare(String(a.created_at)));
+  // Only approved results count anywhere; pending and sent-back ones are kept separately for the family and instructors.
+  const entries = allEntries.filter((e) => e.status === 'approved');
+  const group = (list, key) => {
+    const m = new Map();
+    for (const x of list) { if (!m.has(x[key])) m.set(x[key], []); m.get(x[key]).push(x); }
+    return m;
+  };
+  const entriesByCompetitor = group(entries, 'competitor_id');
+  const unapproved = allEntries.filter((e) => e.status !== 'approved');
+  const classMatchesByLog = group((raw.classMatches || []).slice().sort((a, b) => a.round_no - b.round_no), 'class_log_id');
+  const classLogs = (raw.classLogs || []).map((l) => ({ ...l, class_date: String(l.class_date).slice(0, 10), matches: classMatchesByLog.get(l.id) || [] }))
+    .sort((a, b) => b.class_date.localeCompare(a.class_date));
+  const classLogsByCompetitor = group(classLogs, 'competitor_id');
   const ratings = new Map(raw.ratings.map((r) => [`${r.competitor_id}:${r.discipline}`, r]));
   const completionsByCompetitor = new Map();
   for (const cc of raw.completions || []) {
@@ -46,11 +54,14 @@ export function indexData(raw) {
     completionsByCompetitor.get(cc.competitor_id).push(w);
   }
   for (const list of completionsByCompetitor.values()) list.sort((a, b) => b.week_start.localeCompare(a.week_start));
-  return { ...raw, tournaments, competitorById, entries, entriesByCompetitor, ratings, completionsByCompetitor };
+  return { ...raw, tournaments, competitorById, entries, entriesByCompetitor, ratings, completionsByCompetitor,
+    allEntries, unapproved, classLogs, classLogsByCompetitor };
 }
 
 export const entriesOf = (idx, id) => idx.entriesByCompetitor.get(id) || [];
 export const completionsOf = (idx, id) => idx.completionsByCompetitor?.get(id) || [];
+export const classLogsOf = (idx, id) => idx.classLogsByCompetitor?.get(id) || [];
+export const approvedClassesOf = (idx, id) => classLogsOf(idx, id).filter((l) => l.status === 'approved');
 // The completion for this week's challenge, if any (the "temporary badge").
 export const weeklyDone = (idx, id) => {
   const wk = idx.challenge?.week_start && String(idx.challenge.week_start).slice(0, 10);
@@ -174,10 +185,18 @@ export function xpFor(idx, competitorId) {
   }
   xp += badgesFor(idx, competitorId).filter((b) => b.earned).length * XP.badge;
   xp += completionsOf(idx, competitorId).reduce((s, c) => s + c.xp, 0);   // weekly challenges
+  for (const l of approvedClassesOf(idx, competitorId)) {
+    xp += XP.classAttended;
+    for (const m of l.matches) xp += XP.classMatch + (m.won ? XP.classWin : 0);
+  }
   return xp;
 }
 
 export function recordOf(idx, competitorId, discipline) {
+  if (discipline === 'class') {
+    const cm = approvedClassesOf(idx, competitorId).flatMap((l) => l.matches);
+    return { wins: cm.filter((m) => m.won).length, losses: cm.filter((m) => !m.won).length };
+  }
   const ms = entriesOf(idx, competitorId).filter((e) => !discipline || e.discipline === discipline).flatMap((e) => e.matches);
   return { wins: ms.filter((m) => m.won).length, losses: ms.filter((m) => !m.won).length };
 }
@@ -191,6 +210,12 @@ export function teamRecordOf(idx, competitorId) {
 // Rating over time for one discipline, oldest first.
 export function ratingHistory(idx, competitorId, discipline) {
   const points = [];
+  if (discipline === 'class') {
+    for (const l of approvedClassesOf(idx, competitorId).slice().reverse()) for (const m of l.matches) {
+      if (m.rating_after != null) points.push({ date: l.class_date, rating: Number(m.rating_after) });
+    }
+    return points;
+  }
   const es = entriesOf(idx, competitorId).filter((e) => e.discipline === discipline).slice().reverse();
   for (const e of es) for (const m of e.matches) {
     if (m.rating_after != null) points.push({ date: e.tournament.event_date, rating: Number(m.rating_after) });

@@ -7,7 +7,10 @@ Students and parents log ATA tournament sparring results. The app turns them int
 - **ATA points**: what each student should have on their ATA profile this season, by the 2026–27 rules.
 - **Tier emblems** (Bronze → Mythic) for both tracks, plus badges.
 - **Home screen**: the student's name and both ranks up top, this week's in-class challenge, then their ATA division's leaderboard (any other division is one menu away).
-- **Weekly challenges**: one per week (Monday–Sunday), rotating through the list on the Admin page. Logging it gives XP and that week's badge.
+- **Log a class**: students log a class they attended, any in-class sparring or combat matches (their own *class rating*, separate from tournaments), and whether they completed the weekly challenge in a match.
+- **Log a tournament**: a whole day at once: sparring, combat, team sparring and team combat, each with its matches.
+- **Instructor approval**: classes and tournament results from families wait on the **Review** page until an instructor or admin approves them (or sends them back with a note). Nothing counts toward ratings, XP, points or badges until approved. Instructors' and admins' own entries are approved automatically. Admins set who is an instructor on the Admin page; instructors can't see ATA numbers.
+- **Weekly challenges**: one per week (Monday–Sunday), rotating through the list on the Admin page, each done during a sparring or combat match. Ticking it on an approved class gives XP and that week's badge.
 - **Achievements and titles**: big milestones (e.g. *Unbroken*: 10 wins in a row) unlock a title the family can show next to the name on leaderboards.
 - **Share**: makes a brag picture and message for the phone's share menu.
 

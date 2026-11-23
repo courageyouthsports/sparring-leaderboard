@@ -17,6 +17,7 @@ export default function MeCard({ data, c, link = true }) {
   const rt = ratingTier(rating);
   const rn = nextTier(rating, RATING_TIERS);
   const title = displayTitle(data, c);
+  const classRating = ratingOf(data, c.id, 'class');
   const division = divisionOf(c, seasonYear(todayStr()));
   const weekly = weeklyDone(data, c.id);
 
@@ -55,10 +56,11 @@ export default function MeCard({ data, c, link = true }) {
               {best ? `${Math.round(rating)} ${DISCIPLINES[best.d].toLowerCase()}` : 'No matches yet'}
               {best && best.r.matches < PROVISIONAL_MATCHES ? ' (provisional)' : ''}
             </span>
-            {ratings.length > 1 && (
-              <span className="rank-next">{ratings.map((x) => `${DISCIPLINES[x.d]} ${Math.round(x.r.rating)}`).join(', ')}</span>
+            {(ratings.length > 1 || classRating) && (
+              <span className="rank-next">{[...ratings, ...(classRating ? [{ d: 'class', r: classRating }] : [])]
+                .map((x) => `${DISCIPLINES[x.d]} ${Math.round(x.r.rating)}`).join(', ')}</span>
             )}
-            {ratings.length <= 1 && rn && best && <span className="rank-next">{Math.ceil(rn.min - rating)} to {TIER_NAMES[rn.id]}</span>}
+            {ratings.length <= 1 && !classRating && rn && best && <span className="rank-next">{Math.ceil(rn.min - rating)} to {TIER_NAMES[rn.id]}</span>}
           </div>
         </div>
       </div>
