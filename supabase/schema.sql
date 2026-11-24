@@ -50,6 +50,12 @@ create table if not exists public.competitors (
 );
 create index if not exists competitors_org_idx on public.competitors(org_id);
 
+-- Starting ratings from ATA state standings (see import_standings below). Only a head start: normal Elo after that.
+alter table public.competitors add column if not exists seed_sparring numeric;
+alter table public.competitors add column if not exists seed_combat numeric;
+alter table public.competitors add column if not exists city text not null default '';
+alter table public.competitors add column if not exists ranking_note text not null default '';
+
 -- ATA numbers live in their own table so only the family and admins can ever read them.
 create table if not exists public.competitor_private (
   competitor_id  uuid primary key references public.competitors(id) on delete cascade,
@@ -263,14 +269,21 @@ create policy ratings_read on public.ratings for select
 -- deletes are always reflected correctly. If both students in a match logged it, it counts once.
 -- ---------------------------------------------------------------------------
 
+-- Where a competitor's rating starts: their state-standings head start, or 1000. Class ratings always start at 1000.
+create or replace function public.start_rating(p_id uuid, p_disc text) returns numeric
+language sql stable set search_path = public as $$
+  select coalesce((select case p_disc when 'sparring' then seed_sparring when 'combat' then seed_combat end
+                   from competitors where id = p_id), 1000);
+$$;
+
 -- One Elo step on the working table _r. Returns {my rating before, their rating before, change}.
 create or replace function public.elo_step(p_me uuid, p_opp uuid, p_disc text, p_my int, p_their int,
                                            p_won boolean, p_mult numeric) returns numeric[]
 language plpgsql set search_path = public as $$
 declare ra numeric; rb numeric; e numeric; s numeric; d numeric; tot int := p_my + p_their;
 begin
-  insert into _r values (p_me, p_disc, 1000, 0, 0, 1000) on conflict do nothing;
-  insert into _r values (p_opp, p_disc, 1000, 0, 0, 1000) on conflict do nothing;
+  insert into _r values (p_me, p_disc, start_rating(p_me, p_disc), 0, 0, start_rating(p_me, p_disc)) on conflict do nothing;
+  insert into _r values (p_opp, p_disc, start_rating(p_opp, p_disc), 0, 0, start_rating(p_opp, p_disc)) on conflict do nothing;
   select rating into ra from _r where cid = p_me and disc = p_disc;
   select rating into rb from _r where cid = p_opp and disc = p_disc;
   s := 0.5 * (case when p_won then 1 else 0 end) + 0.5 * (case when tot > 0 then p_my::numeric / tot else 0.5 end);
@@ -1093,6 +1106,59 @@ begin
   if not can_manage(v_comp) then raise exception 'You can only delete your own classes.'; end if;
   delete from class_logs where id = p_id;
   perform recompute_ratings(v_org);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- State standings import
+--   Run from the SQL editor with rows copied from ATA's state standings (sparring and combat weapons).
+--   Each ranked person becomes an opponent profile with a head-start rating, or, if they're already in the
+--   app by name, gets the head start added. Head start by state place:
+--     1st 1150, 2nd-3rd 1125, 4th-10th 1100 (lower places get none).
+--   rows: [{event: 'S'|'C', gender: 'BOYS'|'GIRLS'|'MEN'|'WOMEN', rank, age, place, name, points, city}]
+-- ---------------------------------------------------------------------------
+create or replace function public.import_standings(p_org uuid, p_state text, p_season text, rows jsonb) returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  r jsonb; v_first text; v_last text; v_id uuid; v_place int; v_seed numeric; v_n_new int := 0; v_n_upd int := 0;
+  v_gender text; v_note text; v_city text;
+begin
+  -- Not granted to app users: run it from the Supabase SQL editor.
+  for r in select * from jsonb_array_elements(rows) loop
+    v_place := (r->>'place')::int;
+    v_seed := case when v_place = 1 then 1150 when v_place <= 3 then 1125 when v_place <= 10 then 1100 end;
+    v_first := initcap(split_part(trim(r->>'name'), ' ', 1));
+    v_last := initcap(trim(substr(trim(r->>'name'), length(split_part(trim(r->>'name'), ' ', 1)) + 1)));
+    if v_last = '' then continue; end if;
+    v_gender := case when r->>'gender' in ('BOYS', 'MEN') then 'M' when r->>'gender' in ('GIRLS', 'WOMEN') then 'F' end;
+    v_city := initcap(split_part(coalesce(r->>'city', ''), ',', 1));
+    v_note := p_state || ' #' || v_place || ' ' || case when r->>'event' = 'S' then 'sparring' else 'combat' end
+              || ', ' || initcap(r->>'gender') || ' ' || coalesce(r->>'rank', '') || ', ' || lower(coalesce(r->>'age', ''))
+              || ' (' || p_season || ')';
+
+    select id into v_id from competitors
+      where org_id = p_org and lower(first_name) = lower(v_first) and lower(last_name) = lower(v_last)
+      order by is_placeholder, created_at limit 1;
+    if v_id is null then
+      insert into competitors (org_id, first_name, last_name, state, gender, city, is_placeholder)
+        values (p_org, v_first, v_last, upper(p_state), v_gender, v_city, true) returning id into v_id;
+      v_n_new := v_n_new + 1;
+    else
+      v_n_upd := v_n_upd + 1;
+    end if;
+
+    update competitors set
+      seed_sparring = case when r->>'event' = 'S' and v_seed is not null then greatest(coalesce(seed_sparring, 0), v_seed) else seed_sparring end,
+      seed_combat   = case when r->>'event' = 'C' and v_seed is not null then greatest(coalesce(seed_combat, 0), v_seed) else seed_combat end,
+      city = case when city = '' then v_city else city end,
+      gender = coalesce(gender, v_gender),
+      ranking_note = case when ranking_note = '' then v_note
+                          when position(v_note in ranking_note) > 0 then ranking_note
+                          else ranking_note || '; ' || v_note end
+    where id = v_id;
+  end loop;
+  perform recompute_ratings(p_org);
+  return v_n_new || ' new opponent profiles, ' || v_n_upd || ' rows matched someone already in the app';
 end;
 $$;
 

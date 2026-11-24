@@ -177,7 +177,8 @@ function OpponentProfile({ data, c }) {
     <>
       <div className="profile-head">
         <h1>{fullName(c)}</h1>
-        <p className="muted">{[c.school, c.state].filter(Boolean).join(', ') || 'Opponent'}. Opponent profile, not yet joined.</p>
+        <p className="muted">{[c.school || c.city, c.state].filter(Boolean).join(', ') || 'Opponent'}. Opponent profile, not yet joined.</p>
+        {c.ranking_note && <ul className="rank-notes">{c.ranking_note.split('; ').map((n) => <li key={n}>{n}</li>)}</ul>}
       </div>
       <section className="tiers">
         {['sparring', 'combat'].map((d) => {

@@ -64,7 +64,8 @@ export default function MatchRow({ n, m, cap, team, data, self, onChange, onRemo
             <ul className="suggest" role="listbox">
               {suggestions.map((c) => (
                 <li key={c.id}><button type="button" onClick={() => onChange({ opponent_id: c.id, query: fullName(c) })}>
-                  {fullName(c)} <span className="muted">{[c.school, c.state].filter(Boolean).join(', ')}</span>
+                  {fullName(c)} <span className="muted">{[c.school || c.city, c.state].filter(Boolean).join(', ')}</span>
+                  {c.ranking_note && <span className="rank-note">{c.ranking_note.split('; ')[0]}</span>}
                 </button></li>
               ))}
             </ul>

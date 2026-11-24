@@ -303,3 +303,7 @@ input:focus, select:focus { border-color: var(--ink); outline: none; box-shadow:
 .review-actions { margin-top: .9rem; }
 .inline-chip { margin-left: .6rem; }
 .log fieldset > input { max-width: none; }
+
+/* ---- State rankings ---- */
+.suggest .rank-note { display: block; font-size: .78rem; color: var(--red); font-weight: 500; }
+.rank-notes { margin: .5rem 0 0; padding-left: 1.1rem; color: var(--muted); font-size: .9rem; }
