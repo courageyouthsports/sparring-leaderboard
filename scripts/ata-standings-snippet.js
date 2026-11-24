@@ -1,6 +1,7 @@
 // Copies ATA state standings (sparring + combat weapons) into an import script for supabase import_standings().
 //
-// How to use (once a season, or whenever you want fresh head starts):
+// It fills the State leaderboard and gives ranked opponents a head-start rating.
+// How to use (once a season, or whenever you want to refresh the State leaderboard):
 //   1. Sign in at atamartialarts.com, open MyATA > Tournament Standings > State Standings, and click your state.
 //   2. Open the browser console (View > Developer > JavaScript Console), paste this whole file, press Enter.
 //   3. Wait for "Ready", click "Copy import script", paste it into Supabase > SQL Editor > New query, and Run.
