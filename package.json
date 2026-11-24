@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && vite build -c vite.demo.config.mjs",
     "preview": "vite preview",
     "emblems": "node scripts/make-emblems.mjs",
     "test": "node --test src/lib/*.test.js"
