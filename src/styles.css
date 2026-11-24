@@ -312,3 +312,8 @@ input:focus, select:focus { border-color: var(--ink); outline: none; box-shadow:
 .demo-chip { display: inline-block; font-weight: 600; font-size: .85rem; color: var(--muted); border: 1px dashed var(--muted); padding: .05rem .55rem; border-radius: 99px; }
 .demo-chip.small-chip { font-size: .75rem; margin-right: .4rem; }
 .award-btn { justify-self: start; font-size: .85rem; margin-top: .25rem; }
+
+/* State standings board: no emblem column. */
+.board-row.state-row { grid-template-columns: 2.25rem 1fr auto; }
+div.board-row.state-row:hover { background: none; }
+.board li.is-ours .board-row { background: var(--canvas); box-shadow: inset 4px 0 0 var(--red); }

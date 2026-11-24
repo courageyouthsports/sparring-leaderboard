@@ -5,6 +5,7 @@ import {
 } from '../lib/scoring.js';
 import { displayTitle } from '../lib/achievements.js';
 import { divisionOf, divisionsPresent } from '../lib/divisions.js';
+import StateBoard from '../components/StateBoard.jsx';
 import { Emblem, Segmented } from '../components/ui.jsx';
 import MeCard from '../components/MeCard.jsx';
 import ChallengeCard from '../components/ChallengeCard.jsx';
@@ -83,17 +84,20 @@ export default function Home({ data, params, reload, isAdmin }) {
 
       <section className="division-board">
         <div className="board-head">
-          <label className="division-pick">
+          {board !== 'state' && <label className="division-pick">
             <span className="muted small">Leaderboard</span>
             <select value={divKey} onChange={(e) => setDivChoice(e.target.value)} aria-label="Division">
               <option value="all">All divisions</option>
               {divisions.map((d) => <option key={d.key} value={d.key}>{d.label}{d.key === myDivision?.key ? ' (yours)' : ''}</option>)}
             </select>
-          </label>
+          </label>}
           <Segmented label="Leaderboard type" value={board} onChange={setBoard}
-            options={[['competitive', 'Skill'], ['experience', 'Experience'], ['points', 'ATA points']]} />
+            options={[['competitive', 'Skill'], ['experience', 'Experience'], ['points', 'ATA points'],
+              ...((data.standings || []).length ? [['state', 'State']] : [])]} />
         </div>
 
+        {board === 'state' && <StateBoard data={data} me={me} />}
+        {board !== 'state' && <>
         <div className="filters">
           {board === 'competitive' && (
             <Segmented label="Event" value={discipline} onChange={setDiscipline} options={[['sparring', 'Sparring'], ['combat', 'Combat'], ['class', 'Class']]} />
@@ -150,6 +154,7 @@ export default function Home({ data, params, reload, isAdmin }) {
             })}
           </ol>
         )}
+        </>}
       </section>
     </>
   );

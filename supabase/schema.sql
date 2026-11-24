@@ -578,6 +578,7 @@ begin
     raise exception 'Pick a different profile to merge into.';
   end if;
   update matches set opponent_id = p_into where opponent_id = p_from;
+  update state_standings set competitor_id = p_into where competitor_id = p_from;
   delete from matches x using entries e where e.id = x.entry_id and e.competitor_id = x.opponent_id;
   delete from competitors where id = p_from;
   perform recompute_ratings(v_org);
@@ -1153,6 +1154,28 @@ $$;
 --     1st 1150, 2nd-3rd 1125, 4th-10th 1100 (lower places get none).
 --   rows: [{event: 'S'|'C', gender: 'BOYS'|'GIRLS'|'MEN'|'WOMEN', rank, age, place, name, points, city}]
 -- ---------------------------------------------------------------------------
+-- ATA state standings as published (one row per placement), shown as the "State" leaderboard.
+create table if not exists public.state_standings (
+  id             uuid primary key default gen_random_uuid(),
+  org_id         uuid not null references public.orgs(id) on delete cascade,
+  state          text not null,
+  season         text not null,                     -- e.g. 2026-27
+  event          text not null check (event in ('sparring', 'combat')),
+  gender         text not null default '',          -- as ATA writes it: BOYS, GIRLS, MEN, WOMEN
+  rank           text not null default '',          -- as ATA writes it, e.g. 1st Degree Black Belt
+  age            text not null default '',          -- as ATA writes it, e.g. 13-14
+  place          int not null,
+  name           text not null,
+  points         int,
+  city           text not null default '',
+  competitor_id  uuid references public.competitors(id) on delete set null,
+  imported_at    timestamptz not null default now()
+);
+create index if not exists state_standings_org_idx on public.state_standings(org_id, season);
+alter table public.state_standings enable row level security;
+drop policy if exists state_standings_read on public.state_standings;
+create policy state_standings_read on public.state_standings for select using (is_member(org_id));
+
 create or replace function public.import_standings(p_org uuid, p_state text, p_season text, rows jsonb) returns text
 language plpgsql security definer set search_path = public as $$
 declare
@@ -1160,6 +1183,8 @@ declare
   v_gender text; v_note text; v_city text;
 begin
   -- Not granted to app users: run it from the Supabase SQL editor.
+  -- Each import replaces that state's standings for the season.
+  delete from state_standings where org_id = p_org and state = upper(p_state) and season = p_season;
   for r in select * from jsonb_array_elements(rows) loop
     v_place := (r->>'place')::int;
     v_seed := case when v_place = 1 then 1150 when v_place <= 3 then 1125 when v_place <= 10 then 1100 end;
@@ -1192,6 +1217,10 @@ begin
                           when position(v_note in ranking_note) > 0 then ranking_note
                           else ranking_note || '; ' || v_note end
     where id = v_id;
+    insert into state_standings (org_id, state, season, event, gender, rank, age, place, name, points, city, competitor_id)
+      values (p_org, upper(p_state), p_season, case when r->>'event' = 'S' then 'sparring' else 'combat' end,
+              coalesce(r->>'gender', ''), coalesce(r->>'rank', ''), coalesce(r->>'age', ''), v_place,
+              trim(r->>'name'), nullif(r->>'points', '')::int, coalesce(r->>'city', ''), v_id);
   end loop;
   perform recompute_ratings(p_org);
   return v_n_new || ' new opponent profiles, ' || v_n_upd || ' rows matched someone already in the app';
@@ -1330,7 +1359,7 @@ revoke all on all tables in schema public from anon, authenticated;
 grant select on public.orgs, public.members, public.competitors, public.competitor_private,
   public.competitor_managers, public.tournaments, public.entries, public.matches, public.ratings,
   public.challenges, public.challenge_completions, public.class_logs, public.class_matches,
-  public.competitor_titles
+  public.competitor_titles, public.state_standings
   to authenticated;
 
 revoke all on all functions in schema public from public, anon;

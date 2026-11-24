@@ -17,7 +17,7 @@ export function useOrgData(session) {
       const membership = mine[0];
       const org = membership.org_id;
 
-      const [orgRow, members, competitors, ratings, tournaments, entries, matches, managed, privateRows, challenges, completions, current, classLogs, classMatches, awarded] = await Promise.all([
+      const [orgRow, members, competitors, ratings, tournaments, entries, matches, managed, privateRows, challenges, completions, current, classLogs, classMatches, awarded, standings] = await Promise.all([
         supabase.from('orgs').select('*').eq('id', org).single().then((r) => { if (r.error) throw new Error(r.error.message); return r.data; }),
         fetchAll('members', 'user_id, role, display_name, created_at', (q) => q.eq('org_id', org)),
         fetchAll('competitors', '*', (q) => q.eq('org_id', org)),
@@ -33,6 +33,7 @@ export function useOrgData(session) {
         fetchAll('class_logs'),
         fetchAll('class_matches'),
         fetchAll('competitor_titles'),
+        fetchAll('state_standings', '*', (q) => q.eq('org_id', org)),
       ]);
 
       // Demo data is only for admins to look around; everyone else never sees it.
@@ -56,6 +57,7 @@ export function useOrgData(session) {
         classLogs: classLogs.filter((l) => inOrg.has(l.competitor_id)),
         classMatches,
         awardedTitles: awarded.filter((a) => inOrg.has(a.competitor_id)),
+        standings,
         userId,
       };
       setState({ loading: false, error: null, membership, data: indexData(raw) });
