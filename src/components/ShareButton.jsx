@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DISCIPLINES, EMBLEM_EXT, TIER_NAMES } from '../config.js';
-import { entriesOf, fullName, ratingOf, ratingTier, recordOf, xpFor, xpTier } from '../lib/scoring.js';
+import { entriesOf, fullName, ratingOf, skillTier, recordOf, xpFor, xpTier } from '../lib/scoring.js';
 import { displayTitle } from '../lib/achievements.js';
 import { ordinal } from './ui.jsx';
 
@@ -19,7 +19,7 @@ function facts(data, c) {
     title: displayTitle(data, c),
     xp, xpTier: xpTier(xp).id,
     rating: best ? Math.round(best.r.rating) : null,
-    ratingTier: ratingTier(best ? best.r.rating : 1000).id,
+    ratingTier: skillTier(best?.r).id,
     discipline: best ? DISCIPLINES[best.d].toLowerCase() : null,
     record: rec ? `${rec.wins}–${rec.losses}` : null,
     last: last ? { place: last.placement, name: last.tournament.name, discipline: DISCIPLINES[last.discipline].toLowerCase(), team: last.team } : null,
@@ -30,7 +30,7 @@ function facts(data, c) {
 export function shareText(f) {
   const parts = [];
   if (f.last?.place) parts.push(`${f.first} took ${ordinal(f.last.place)} in ${f.last.team ? 'team ' : ''}${f.last.discipline} at ${f.last.name}!`);
-  parts.push(`${f.title ? `"${f.title}" ` : ''}${f.name} is ${TIER_NAMES[f.ratingTier]} rank${f.rating ? ` with a ${f.rating} ${f.discipline} rating (${f.record})` : ''} and ${TIER_NAMES[f.xpTier]} in experience.`);
+  parts.push(`${f.title ? `"${f.title}" ` : ''}${f.name} is ${TIER_NAMES[f.ratingTier]}${f.ratingTier === 'untested' ? '' : ' rank'}${f.rating ? ` with a ${f.rating} ${f.discipline} rating (${f.record})` : ''} and ${TIER_NAMES[f.xpTier]} in experience.`);
   parts.push(`Training at ${f.school}.`);
   return parts.join(' ');
 }

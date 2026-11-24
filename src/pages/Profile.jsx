@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { DISCIPLINES, PROVISIONAL_MATCHES, TIER_NAMES, RATING_TIERS, TITLE_NAMES } from '../config.js';
 import {
-  approvedClassesOf, badgesFor, classLogsOf, completionsOf, entriesOf, fullName, nextTier, ratingHistory, ratingOf, ratingTier, recordOf, seasonLabel,
+  approvedClassesOf, badgesFor, classLogsOf, completionsOf, entriesOf, fullName, nextTier, ratingHistory, ratingOf, skillTier, recordOf, seasonLabel,
   seasonPoints, seasonYear, teamRecordOf, todayStr, weeklyDone,
 } from '../lib/scoring.js';
 import { achievementsFor } from '../lib/achievements.js';
@@ -147,13 +147,13 @@ function RatingCard({ data, id, discipline }) {
   if (!r) {
     return (
       <div className="tier-card faded">
-        <Emblem track="competitive" tier="bronze" size={72} />
+        <Emblem track="competitive" tier="untested" size={72} />
         <div><h2>{DISCIPLINES[discipline]}</h2><p className="muted">{discipline === 'class' ? 'No approved class matches yet.' : 'No matches yet.'} Everyone starts at 1000.</p></div>
       </div>
     );
   }
-  const t = ratingTier(r.rating);
-  const n = nextTier(Number(r.rating), RATING_TIERS);
+  const t = skillTier(r);
+  const n = t.id === 'untested' ? null : nextTier(Number(r.rating), RATING_TIERS);
   const rec = recordOf(data, id, discipline);
   return (
     <div className="tier-card">
@@ -163,7 +163,7 @@ function RatingCard({ data, id, discipline }) {
         <p className="big">{Math.round(r.rating)} <span className="unit">rating</span></p>
         <p className="small muted">
           {rec.wins}–{rec.losses} record, peak {Math.round(r.peak)}
-          {r.matches < PROVISIONAL_MATCHES ? `, provisional until ${PROVISIONAL_MATCHES} matches` : n ? `, ${Math.ceil(n.min - r.rating)} to ${TIER_NAMES[n.id]}` : ''}
+          {r.matches < PROVISIONAL_MATCHES ? `, ranked after ${PROVISIONAL_MATCHES} matches` : n ? `, ${Math.ceil(n.min - r.rating)} to ${TIER_NAMES[n.id]}` : ''}
         </p>
         <Sparkline points={ratingHistory(data, id, discipline)} />
       </div>
@@ -185,7 +185,7 @@ function OpponentProfile({ data, c }) {
           const r = ratingOf(data, c.id, d);
           return r ? (
             <div key={d} className="tier-card">
-              <Emblem track="competitive" tier={ratingTier(r.rating).id} size={56} />
+              <Emblem track="competitive" tier={skillTier(r).id} size={56} />
               <div><h2>{DISCIPLINES[d]}</h2><p className="big">{Math.round(r.rating)} <span className="unit">estimated</span></p></div>
             </div>
           ) : null;

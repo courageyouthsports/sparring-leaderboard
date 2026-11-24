@@ -6,6 +6,7 @@ export const EMBLEM_EXT = 'svg';
 
 export const TIER_NAMES = {
   bronze: 'Bronze', silver: 'Silver', gold: 'Gold', platinum: 'Platinum', mythic: 'Mythic',
+  untested: 'Untested', diamond: 'Diamond',
 };
 
 // Experience track: earned by competing. Only ever goes up. Minimum XP for each tier.
@@ -17,15 +18,17 @@ export const XP_TIERS = [
   { id: 'mythic', min: 3000 },
 ];
 
-// Competitive track: from the skill rating (everyone starts at 1000). Minimum rating for each tier.
+// Skill track: from the skill rating (everyone starts at 1000). Minimum rating for each tier.
+// Before a student has PROVISIONAL_MATCHES rated matches they are "Untested" whatever their rating.
 export const RATING_TIERS = [
   { id: 'bronze', min: -Infinity },
   { id: 'silver', min: 1050 },
   { id: 'gold', min: 1125 },
   { id: 'platinum', min: 1225 },
-  { id: 'mythic', min: 1350 },
+  { id: 'diamond', min: 1350 },
 ];
-// Matches needed before a rating counts as settled (shown as "provisional" until then).
+export const UNTESTED = { id: 'untested', min: -Infinity };
+// Matches needed before a rating counts as settled ("Untested" until then).
 export const PROVISIONAL_MATCHES = 3;
 
 // --- Experience points -----------------------------------------------------
@@ -103,7 +106,7 @@ export const TITLE_NAMES = {
   centurion: 'Centurion',
   medalist: 'National Medalist',
   'champion-of-champions': 'Super-20 Champion',
-  mythic: 'Mythic',
+  mythic: 'Diamond',
   legend: 'Legend',
   dedicated: 'Dedicated',
 };

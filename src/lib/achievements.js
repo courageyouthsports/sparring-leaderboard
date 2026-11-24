@@ -2,7 +2,7 @@
 import { RATING_TIERS, XP_TIERS, TITLE_NAMES } from '../config.js';
 import { completionsOf, entriesOf, ratingOf, xpFor } from './scoring.js';
 
-const MYTHIC_RATING = RATING_TIERS.find((t) => t.id === 'mythic').min;
+const DIAMOND_RATING = RATING_TIERS.find((t) => t.id === 'diamond').min;
 const MYTHIC_XP = XP_TIERS.find((t) => t.id === 'mythic').min;
 
 // Titles an instructor or admin awarded by hand.
@@ -62,7 +62,7 @@ export const ACHIEVEMENTS = [
     progress: (s) => (s.entries.some((e) => !e.team && e.placement === 1 && e.tournament.tier === 'AAA') ? 1 : 0),
   },
   {
-    id: 'mythic', name: 'Mythic', desc: `Reach a ${MYTHIC_RATING} skill rating in sparring or combat sparring`, goal: MYTHIC_RATING,
+    id: 'mythic', name: 'Diamond', desc: `Reach Diamond: a ${DIAMOND_RATING} skill rating in sparring or combat sparring`, goal: DIAMOND_RATING,
     progress: (s) => Math.round(Math.max(1000, ...['sparring', 'combat'].map((d) => Number(ratingOf(s.idx, s.id, d)?.peak || 0)))),
     unit: 'peak rating', start: 1000,
   },

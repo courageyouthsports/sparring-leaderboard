@@ -1,14 +1,23 @@
-// Draws the 10 tier emblems into public/emblems/<track>/<tier>.svg.
+// Draws the tier emblems into public/emblems/<track>/<tier>.svg.
 // The app only ever loads those files by path, so new art can replace them at any time:
 // drop in a new file with the same name (SVG, or change the extension in src/config.js to use PNGs).
 import fs from 'fs';
 
-const TIERS = [
+// n = how ornate: 0 plain outline, 1 gem, 2 inner border, 3 wings, 4 cut gem, 5 rays.
+const XP_TIERS = [
   { id: 'bronze',   n: 1, c: '#B4713D', light: '#E9C3A2' },
   { id: 'silver',   n: 2, c: '#7D8BA1', light: '#D5DCE6' },
   { id: 'gold',     n: 3, c: '#C99A0E', light: '#F6E3A1' },
   { id: 'platinum', n: 4, c: '#2E9C95', light: '#B9E6E2' },
   { id: 'mythic',   n: 5, c: '#7B4FD6', light: '#D9CBF6' },
+];
+const SKILL_TIERS = [
+  { id: 'untested', n: 0, c: '#9AA3B2', light: '#E6E9EE' },
+  { id: 'bronze',   n: 1, c: '#B4713D', light: '#E9C3A2' },
+  { id: 'silver',   n: 2, c: '#7D8BA1', light: '#D5DCE6' },
+  { id: 'gold',     n: 3, c: '#C99A0E', light: '#F6E3A1' },
+  { id: 'platinum', n: 4, c: '#2E9C95', light: '#B9E6E2' },
+  { id: 'diamond',  n: 5, c: '#2F7FD8', light: '#CFE6FF' },
 ];
 
 const gem = (r, n, t) => {
@@ -37,12 +46,12 @@ const draw = (frame, t, wingGap) => `<svg xmlns="http://www.w3.org/2000/svg" vie
 ${t.n === 5 ? rays(t, 47) : ''}${t.n >= 3 ? wings(t, wingGap) : ''}
 <path d="${frame(1)}" fill="${t.light}" fill-opacity="0.55" stroke="${t.c}" stroke-width="3" stroke-linejoin="round"/>
 ${t.n >= 2 ? `<path d="${frame(0.78)}" fill="none" stroke="${t.c}" stroke-width="1.6" stroke-linejoin="round"/>` : ''}
-${gem(t.n >= 4 ? 13 : 10, t.n, t)}
+${t.n >= 1 ? gem(t.n >= 4 ? 13 : 10, t.n, t) : `<path d="M60 52L68 60L60 68L52 60Z" fill="none" stroke="${t.c}" stroke-width="2" stroke-dasharray="3 3"/>`}
 </svg>
 `;
 
-for (const [track, frame, gap] of [['experience', shield, 30], ['competitive', diamond, 34]]) {
+for (const [track, frame, gap, tiers] of [['experience', shield, 30, XP_TIERS], ['competitive', diamond, 34, SKILL_TIERS]]) {
   fs.mkdirSync(`public/emblems/${track}`, { recursive: true });
-  for (const t of TIERS) fs.writeFileSync(`public/emblems/${track}/${t.id}.svg`, draw(frame, t, gap));
+  for (const t of tiers) fs.writeFileSync(`public/emblems/${track}/${t.id}.svg`, draw(frame, t, gap));
 }
 console.log('Emblems written to public/emblems/');

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { indexData, seasonPoints, seasonYear, entryPoints, xpTier, ratingTier, badgesFor, xpFor } from './scoring.js';
+import { indexData, seasonPoints, seasonYear, entryPoints, xpTier, ratingTier, skillTier, badgesFor, xpFor } from './scoring.js';
 
 const comp = (id, extra = {}) => ({ id, first_name: id, last_name: 'X', leadership: true, is_placeholder: false, ...extra });
 let n = 0;
@@ -41,7 +41,9 @@ test('tiers, badges and experience', () => {
   assert.equal(xpTier(0).id, 'bronze');
   assert.equal(xpTier(800).id, 'gold');
   assert.equal(ratingTier(1000).id, 'bronze');
-  assert.equal(ratingTier(1360).id, 'mythic');
+  assert.equal(ratingTier(1360).id, 'diamond');
+  assert.equal(skillTier({ rating: 1400, matches: 2 }).id, 'untested');
+  assert.equal(skillTier({ rating: 1400, matches: 3 }).id, 'diamond');
   const t = T('B', '2026-10-03');
   const e = E('a', t);
   const matches = [

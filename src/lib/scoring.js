@@ -1,7 +1,7 @@
 // Experience, tiers, badges and ATA ranking points, worked out from the logged results.
 // (Skill ratings are calculated in the database; see supabase/schema.sql.)
 import {
-  XP, XP_TIERS, RATING_TIERS, INDIVIDUAL_POINTS, C_POINTS, TEAM_POINTS, COUNTED, SEASON_END,
+  XP, XP_TIERS, RATING_TIERS, UNTESTED, PROVISIONAL_MATCHES, INDIVIDUAL_POINTS, C_POINTS, TEAM_POINTS, COUNTED, SEASON_END,
 } from '../config.js';
 
 // ---- Seasons ---------------------------------------------------------------
@@ -81,6 +81,8 @@ export function nextTier(value, tiers) {
 }
 export const xpTier = (xp) => tierFor(xp, XP_TIERS);
 export const ratingTier = (rating) => tierFor(rating ?? 1000, RATING_TIERS);
+// Skill tier for a ratings row: Untested until enough matches, then by rating.
+export const skillTier = (r) => (!r || r.matches < PROVISIONAL_MATCHES ? UNTESTED : ratingTier(Number(r.rating)));
 
 // ---- ATA ranking points ----------------------------------------------------
 

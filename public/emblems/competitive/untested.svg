@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="untested">
+
+<path d="M60 20L96 60L60 100L24 60Z" fill="#E6E9EE" fill-opacity="0.55" stroke="#9AA3B2" stroke-width="3" stroke-linejoin="round"/>
+
+<path d="M60 52L68 60L60 68L52 60Z" fill="none" stroke="#9AA3B2" stroke-width="2" stroke-dasharray="3 3"/>
+</svg>

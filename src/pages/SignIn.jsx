@@ -28,7 +28,7 @@ export default function SignIn() {
   return (
     <main className="narrow signin">
       <div className="signin-mark">
-        <img src="/emblems/competitive/mythic.svg" alt="" width="72" height="72" />
+        <img src="/emblems/competitive/diamond.svg" alt="" width="72" height="72" />
       </div>
       <h1>Sparring Leaderboard</h1>
       <p className="lede">Log tournament matches, watch your rating climb, and earn your next tier.</p>

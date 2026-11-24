@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { PROVISIONAL_MATCHES, TIER_NAMES } from '../config.js';
 import {
-  fullName, ratingOf, ratingTier, recordOf, seasonLabel, seasonPoints, seasonYear, todayStr, weeklyDone, xpFor, xpTier,
+  fullName, ratingOf, skillTier, recordOf, seasonLabel, seasonPoints, seasonYear, todayStr, weeklyDone, xpFor, xpTier,
 } from '../lib/scoring.js';
 import { displayTitle } from '../lib/achievements.js';
 import { divisionOf, divisionsPresent } from '../lib/divisions.js';
@@ -41,7 +41,7 @@ export default function Home({ data, params, reload, isAdmin }) {
         .map(({ c, r }) => {
           const rec = recordOf(data, c.id, discipline);
           return {
-            c, value: Number(r.rating), display: Math.round(r.rating), tier: ratingTier(r.rating).id,
+            c, value: Number(r.rating), display: Math.round(r.rating), tier: skillTier(r).id,
             provisional: r.matches < PROVISIONAL_MATCHES, sub: `${rec.wins}–${rec.losses}`,
           };
         })
@@ -137,7 +137,7 @@ export default function Home({ data, params, reload, isAdmin }) {
                         {row.c.is_demo && <span className="demo-chip small-chip">Demo</span>}
                         {title && <span className="title-chip small-chip">{title}</span>}
                         {[divKey === 'all' && divisionOf(row.c, thisSeason)?.label, divKey !== 'all' && row.c.belt,
-                          row.tier && TIER_NAMES[row.tier], row.provisional && 'provisional'].filter(Boolean).join(', ')}
+                          row.tier && TIER_NAMES[row.tier]].filter(Boolean).join(', ')}
                       </span>
                     </span>
                     <span className="board-value">

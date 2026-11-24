@@ -1,5 +1,5 @@
 import { DISCIPLINES, PROVISIONAL_MATCHES, RATING_TIERS, TIER_NAMES, XP_TIERS } from '../config.js';
-import { fullName, nextTier, ratingOf, ratingTier, seasonYear, todayStr, weeklyDone, xpFor, xpTier } from '../lib/scoring.js';
+import { fullName, nextTier, ratingOf, skillTier, seasonYear, todayStr, weeklyDone, xpFor, xpTier } from '../lib/scoring.js';
 import { displayTitle } from '../lib/achievements.js';
 import { divisionOf } from '../lib/divisions.js';
 import { Emblem } from './ui.jsx';
@@ -14,8 +14,8 @@ export default function MeCard({ data, c, link = true }) {
   const ratings = ['sparring', 'combat'].map((d) => ({ d, r: ratingOf(data, c.id, d) })).filter((x) => x.r);
   const best = ratings.slice().sort((a, b) => b.r.rating - a.r.rating)[0];
   const rating = best ? Number(best.r.rating) : 1000;
-  const rt = ratingTier(rating);
-  const rn = nextTier(rating, RATING_TIERS);
+  const rt = skillTier(best?.r);
+  const rn = rt.id === 'untested' ? null : nextTier(rating, RATING_TIERS);
   const title = displayTitle(data, c);
   const classRating = ratingOf(data, c.id, 'class');
   const division = divisionOf(c, seasonYear(todayStr()));
@@ -55,7 +55,7 @@ export default function MeCard({ data, c, link = true }) {
             <b className="rank-tier">{TIER_NAMES[rt.id]}</b>
             <span className="rank-num">
               {best ? `${Math.round(rating)} ${DISCIPLINES[best.d].toLowerCase()}` : 'No matches yet'}
-              {best && best.r.matches < PROVISIONAL_MATCHES ? ' (provisional)' : ''}
+              {best && best.r.matches < PROVISIONAL_MATCHES ? `, ${PROVISIONAL_MATCHES - best.r.matches} more to be ranked` : ''}
             </span>
             {(ratings.length > 1 || classRating) && (
               <span className="rank-next">{[...ratings, ...(classRating ? [{ d: 'class', r: classRating }] : [])]
