@@ -935,9 +935,45 @@ $$;
 
 create or replace function public.set_title(p_competitor uuid, p_title text) returns void
 language plpgsql security definer set search_path = public as $$
+declare v_org uuid;
 begin
-  if not can_manage(p_competitor) then raise exception 'You can only change your own competitors.'; end if;
+  select org_id into v_org from competitors where id = p_competitor;
+  if not (can_manage(p_competitor) or is_approver(v_org)) then raise exception 'You can only change your own competitors.'; end if;
   update competitors set title = nullif(p_title, '') where id = p_competitor;
+end;
+$$;
+
+-- Titles an instructor or admin has awarded by hand (on top of the ones earned through achievements).
+create table if not exists public.competitor_titles (
+  competitor_id  uuid not null references public.competitors(id) on delete cascade,
+  title          text not null,
+  awarded_by     uuid references auth.users(id) on delete set null,
+  awarded_at     timestamptz not null default now(),
+  primary key (competitor_id, title)
+);
+alter table public.competitor_titles enable row level security;
+drop policy if exists competitor_titles_read on public.competitor_titles;
+create policy competitor_titles_read on public.competitor_titles for select
+  using (exists (select 1 from competitors c where c.id = competitor_id and is_member(c.org_id)));
+
+-- Award (p_award true) or take back (false) a title. Instructors and admins only.
+create or replace function public.award_title(p_competitor uuid, p_title text, p_award boolean) returns void
+language plpgsql security definer set search_path = public as $$
+declare v_org uuid;
+begin
+  select org_id into v_org from competitors where id = p_competitor and not is_placeholder;
+  if v_org is null then raise exception 'Competitor not found.'; end if;
+  if not is_approver(v_org) then raise exception 'Only an instructor or admin can award titles.'; end if;
+  if p_title not in ('unbroken', 'iron-wall', 'double-gold', 'giant-killer', 'road-warrior', 'centurion',
+                     'medalist', 'champion-of-champions', 'mythic', 'legend', 'dedicated') then
+    raise exception 'Unknown title.';
+  end if;
+  if p_award then
+    insert into competitor_titles (competitor_id, title, awarded_by) values (p_competitor, p_title, auth.uid())
+      on conflict do nothing;
+  else
+    delete from competitor_titles where competitor_id = p_competitor and title = p_title;
+  end if;
 end;
 $$;
 
@@ -1163,13 +1199,138 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- Demo data: one made-up student with every achievement, badge and title unlocked, so admins can see
+-- how everything looks. Demo opponents and tournaments are made up too and only fight each other, so
+-- real ratings are never touched. Families never see any of it; remove it from the Admin page.
+-- ---------------------------------------------------------------------------
+alter table public.competitors add column if not exists is_demo boolean not null default false;
+alter table public.tournaments add column if not exists is_demo boolean not null default false;
+
+create or replace function public.remove_demo(p_org uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is not null and not is_admin(p_org) then raise exception 'Only an admin can do that.'; end if;
+  delete from competitors where org_id = p_org and is_demo;
+  delete from tournaments where org_id = p_org and is_demo;
+  perform recompute_ratings(p_org);
+end;
+$$;
+
+create or replace function public.seed_demo(p_org uuid) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  v_kid uuid; v_opp uuid[] := '{}'; v_id uuid; v_t uuid; v_e uuid; v_l uuid; i int; r int;
+  v_week date; v_ch record;
+  -- opponents: name, sparring/combat head start
+  opp_names text[] := array['Riley','Jordan','Casey','Morgan','Avery','Quinn','Harper','Rowan','Sage','Emerson'];
+  opp_seeds int[]  := array[ 950,   975,   1000,   1025,   1100,  1150,   1200,  1450,   1500,  1550];
+  -- tournaments: name, date, class
+  t_names text[] := array['Demo Spring Regional','Demo Memorial Day Classic','Demo Summer Open','Demo Super-20 (Worlds)',
+                          'Demo Back-to-School Regional','Demo H.U. Lee Classic','Demo Fall Nationals','Demo Harvest Regional',
+                          'Demo Halloween Open','Demo In-School Tournament'];
+  t_dates date[] := array['2026-05-09','2026-05-30','2026-06-20','2026-07-18','2026-08-08','2026-08-29','2026-09-26',
+                          '2026-10-17','2026-10-31','2026-11-14'];
+  t_tiers text[] := array['B','A','B','AAA','A','A+','AA','B','A','C'];
+  -- sparring: per tournament, 6 matches as opponent# / my score / their score; then placement
+  sp int[][] := array[
+    [1,5,0, 2,5,0, 3,5,0, 4,5,0, 5,5,0, 6,5,0],    -- 6 shutouts: Iron Wall
+    [8,5,3, 9,5,4, 10,5,4, 7,5,2, 6,5,1, 5,5,2],   -- three upsets over 1450+: Giant Killer
+    [7,5,1, 8,5,2, 9,5,3, 10,4,5, 6,5,0, 5,5,1],
+    [8,5,2, 9,5,1, 10,5,3, 7,5,0, 9,5,2, 10,5,1],  -- AAA gold
+    [6,5,0, 7,5,2, 8,3,5, 9,5,4, 10,5,3, 5,5,0],
+    [7,5,1, 8,5,2, 9,5,3, 10,5,2, 6,5,0, 4,5,0],
+    [8,5,1, 9,5,2, 10,5,2, 7,5,0, 6,4,5, 5,5,1],
+    [1,5,0, 2,5,1, 3,5,0, 4,5,2, 5,5,1, 6,5,0],
+    [7,5,2, 8,5,3, 9,4,5, 10,5,2, 6,5,1, 5,5,0],
+    [1,5,0, 2,5,0, 3,5,1, 4,5,0, 5,5,2, 6,5,1]];
+  sp_place int[] := array[1,1,2,1,2,1,2,1,2,1];
+  cb int[][] := array[
+    [1,10,4, 2,10,6, 3,10,5, 4,10,7],
+    [5,10,8, 6,8,10, 7,10,6, 8,10,9],
+    [5,10,7, 6,10,4, 7,9,10, 8,10,8],
+    [8,10,7, 9,10,8, 10,10,9, 7,10,5],              -- AAA gold in combat too: Double Gold
+    [5,10,6, 6,10,7, 7,10,8, 8,7,10],
+    [6,10,5, 7,10,6, 8,10,9, 9,10,8],
+    [7,10,6, 8,10,7, 9,6,10, 10,10,9],
+    [1,10,3, 2,10,4, 3,10,5, 4,10,6],
+    [6,10,7, 7,10,8, 8,10,6, 9,9,10],
+    [1,10,2, 2,10,3, 3,10,4, 4,10,5]];
+  cb_place int[] := array[1,2,2,1,2,1,2,1,2,1];
+begin
+  if auth.uid() is not null and not is_admin(p_org) then raise exception 'Only an admin can do that.'; end if;
+  perform remove_demo(p_org);
+
+  insert into competitors (org_id, first_name, last_name, school, state, city, gender, birth_year, belt, leadership, is_demo, title)
+    values (p_org, 'Dakota', 'Demo', (select name from orgs where id = p_org), 'IN', 'Fishers', 'F', 2013, '1st Degree', true, true, 'unbroken')
+    returning id into v_kid;
+  insert into competitor_private values (v_kid, 'DEMO-' || upper(substr(replace(p_org::text, '-', ''), 1, 10)));
+  insert into competitor_managers select v_kid, user_id from members where org_id = p_org and role = 'admin';
+  insert into competitor_titles (competitor_id, title) values (v_kid, 'legend');   -- one awarded by hand, as an example
+
+  for i in 1..10 loop
+    insert into competitors (org_id, first_name, last_name, school, state, city, is_placeholder, is_demo, seed_sparring, seed_combat)
+      values (p_org, opp_names[i], 'Demo', 'Demo Opponent School', 'IN', 'Demo City', true, true, opp_seeds[i], opp_seeds[i])
+      returning id into v_id;
+    v_opp := v_opp || v_id;
+  end loop;
+
+  for i in 1..10 loop
+    insert into tournaments (org_id, name, event_date, tier, location, is_demo)
+      values (p_org, t_names[i], t_dates[i], t_tiers[i], 'Demo City, IN', true) returning id into v_t;
+
+    insert into entries (competitor_id, tournament_id, discipline, champion, division, placement, ring_size, status, created_at)
+      values (v_kid, v_t, 'sparring', true, 'Junior Girls 13-14, 1st Degree', sp_place[i], 8, 'approved', t_dates[i]::timestamptz)
+      returning id into v_e;
+    for r in 0..5 loop
+      insert into matches (entry_id, round_no, opponent_id, my_score, opp_score, won)
+        values (v_e, r + 1, v_opp[sp[i][r * 3 + 1]], sp[i][r * 3 + 2], sp[i][r * 3 + 3], sp[i][r * 3 + 2] > sp[i][r * 3 + 3]);
+    end loop;
+
+    insert into entries (competitor_id, tournament_id, discipline, champion, division, placement, ring_size, status, created_at)
+      values (v_kid, v_t, 'combat', true, 'Junior Girls 13-14, 1st Degree', cb_place[i], 8, 'approved', t_dates[i]::timestamptz + interval '1 hour')
+      returning id into v_e;
+    for r in 0..3 loop
+      insert into matches (entry_id, round_no, opponent_id, my_score, opp_score, won)
+        values (v_e, r + 1, v_opp[cb[i][r * 3 + 1]], cb[i][r * 3 + 2], cb[i][r * 3 + 3], cb[i][r * 3 + 2] > cb[i][r * 3 + 3]);
+    end loop;
+
+    if i = 7 then   -- team sparring at Nationals
+      insert into entries (competitor_id, tournament_id, discipline, team, team_name, champion, placement, status, created_at)
+        values (v_kid, v_t, 'sparring', true, 'Courage Red', true, 1, 'approved', t_dates[i]::timestamptz + interval '2 hours')
+        returning id into v_e;
+      insert into matches (entry_id, round_no, opponent_id, my_score, opp_score, won, team_score, opp_team_score, team_won)
+        values (v_e, 1, v_opp[6], 7, 3, true, 19, 14, true), (v_e, 2, v_opp[7], 6, 4, true, 21, 17, true);
+    end if;
+  end loop;
+
+  -- ten approved classes in the last ten weeks, each with the weekly challenge done
+  for i in 1..10 loop
+    v_week := current_week_start() - 7 * i;
+    insert into class_logs (competitor_id, class_date, challenge_done, status, reviewed_at)
+      values (v_kid, v_week + 1, true, 'approved', now()) returning id into v_l;
+    insert into class_matches (class_log_id, round_no, discipline, opponent_id, my_score, opp_score, won)
+      values (v_l, 1, 'sparring', v_opp[5], 5, 3, true), (v_l, 2, 'combat', v_opp[6], 10, 7, true);
+    select * into v_ch from challenge_for_week(p_org, v_week);
+    if v_ch.id is not null then
+      insert into challenge_completions (competitor_id, challenge_id, title, xp, week_start, class_log_id)
+        values (v_kid, v_ch.id, v_ch.title, v_ch.xp, v_week, v_l) on conflict do nothing;
+    end if;
+  end loop;
+
+  perform recompute_ratings(p_org);
+  return v_kid;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Permissions: signed-in users may call the functions; nobody may write tables directly.
 -- ---------------------------------------------------------------------------
 
 revoke all on all tables in schema public from anon, authenticated;
 grant select on public.orgs, public.members, public.competitors, public.competitor_private,
   public.competitor_managers, public.tournaments, public.entries, public.matches, public.ratings,
-  public.challenges, public.challenge_completions, public.class_logs, public.class_matches
+  public.challenges, public.challenge_completions, public.class_logs, public.class_matches,
+  public.competitor_titles
   to authenticated;
 
 revoke all on all functions in schema public from public, anon;
@@ -1183,6 +1344,7 @@ grant execute on function
   public.log_challenge(uuid), public.delete_challenge_completion(uuid), public.save_challenge(jsonb),
   public.delete_challenge(uuid), public.seed_starter_challenges(uuid), public.set_title(uuid, text),
   public.is_approver(uuid), public.log_tournament_day(jsonb), public.review_entries(uuid[], boolean, text),
-  public.log_class(jsonb), public.review_class(uuid[], boolean, text), public.delete_class_log(uuid)
+  public.log_class(jsonb), public.review_class(uuid[], boolean, text), public.delete_class_log(uuid),
+  public.award_title(uuid, text, boolean), public.seed_demo(uuid), public.remove_demo(uuid)
   to authenticated;
 -- recompute_ratings and setup_org are only run by the functions above or from the SQL editor.

@@ -307,3 +307,8 @@ input:focus, select:focus { border-color: var(--ink); outline: none; box-shadow:
 /* ---- State rankings ---- */
 .suggest .rank-note { display: block; font-size: .78rem; color: var(--red); font-weight: 500; }
 .rank-notes { margin: .5rem 0 0; padding-left: 1.1rem; color: var(--muted); font-size: .9rem; }
+
+/* ---- Demo + awarded titles ---- */
+.demo-chip { display: inline-block; font-weight: 600; font-size: .85rem; color: var(--muted); border: 1px dashed var(--muted); padding: .05rem .55rem; border-radius: 99px; }
+.demo-chip.small-chip { font-size: .75rem; margin-right: .4rem; }
+.award-btn { justify-self: start; font-size: .85rem; margin-top: .25rem; }

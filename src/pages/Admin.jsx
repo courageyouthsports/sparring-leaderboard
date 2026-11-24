@@ -32,6 +32,8 @@ export default function Admin({ data, reload, session }) {
         <p className="join-code">{data.org.join_code}</p>
       </section>
 
+      <DemoData data={data} busy={busy} act={act} />
+
       <Challenges data={data} busy={busy} act={act} />
 
       <section>
@@ -174,5 +176,26 @@ function ChallengeForm({ data, ch, busy, act, done }) {
       <label className="field"><span className="field-label">XP</span><input type="number" min="0" max="500" value={f.xp} onChange={(e) => setF({ ...f, xp: e.target.value })} /></label>
       <div className="actions"><button className="primary" disabled={busy}>Save challenge</button><button type="button" className="link" onClick={done}>Cancel</button></div>
     </form>
+  );
+}
+
+function DemoData({ data, busy, act }) {
+  const demo = data.competitors.find((c) => c.is_demo && !c.is_placeholder);
+  return (
+    <section className="card">
+      <h2>Demo student</h2>
+      <p className="small muted">A made-up student with every achievement, badge and title unlocked, plus made-up opponents and tournaments,
+        so you can see how everything looks. Only admins see it, and it never affects real ratings.</p>
+      <div className="actions">
+        {demo && <a className="button" href={`#/c/${demo.id}`}>Open {demo.first_name} {demo.last_name}</a>}
+        <button className="primary" disabled={busy} onClick={() => act(() => rpc('seed_demo', { p_org: data.org.id }))}>
+          {demo ? 'Reset demo' : 'Add demo student'}
+        </button>
+        {demo && (
+          <button className="link danger" disabled={busy}
+            onClick={() => act(() => rpc('remove_demo', { p_org: data.org.id }), 'Remove the demo student and all demo data?')}>Remove demo</button>
+        )}
+      </div>
+    </section>
   );
 }

@@ -5,6 +5,9 @@ import { completionsOf, entriesOf, ratingOf, xpFor } from './scoring.js';
 const MYTHIC_RATING = RATING_TIERS.find((t) => t.id === 'mythic').min;
 const MYTHIC_XP = XP_TIERS.find((t) => t.id === 'mythic').min;
 
+// Titles an instructor or admin awarded by hand.
+export const awardedOf = (idx, id) => new Set((idx.awardedTitles || []).filter((a) => a.competitor_id === id).map((a) => a.title));
+
 // All of a competitor's matches, oldest first.
 function timeline(idx, id) {
   return entriesOf(idx, id).slice().reverse().flatMap((e) => e.matches.map((m) => ({ m, e })));
@@ -76,18 +79,23 @@ export const ACHIEVEMENTS = [
 ];
 
 // Every achievement with { value, done, pct } for one competitor.
+// done = earned through results; awarded = given by an instructor; unlocked = either.
 export function achievementsFor(idx, id) {
   const s = { idx, id, entries: entriesOf(idx, id), timeline: timeline(idx, id) };
+  const awarded = awardedOf(idx, id);
   return ACHIEVEMENTS.map((a) => {
     const value = a.progress(s);
     const start = a.start || 0;
     const done = value >= a.goal;
-    return { ...a, title: TITLE_NAMES[a.id], value, done, pct: done ? 100 : Math.max(0, Math.min(100, ((value - start) / (a.goal - start)) * 100)) };
+    return {
+      ...a, title: TITLE_NAMES[a.id], value, done, awarded: awarded.has(a.id), unlocked: done || awarded.has(a.id),
+      pct: done ? 100 : Math.max(0, Math.min(100, ((value - start) / (a.goal - start)) * 100)),
+    };
   });
 }
 
 // The title to show, only if it is still earned (protects against edits removing the achievement).
 export function displayTitle(idx, c) {
   if (!c?.title) return null;
-  return achievementsFor(idx, c.id).find((a) => a.id === c.title && a.done) ? TITLE_NAMES[c.title] : null;
+  return achievementsFor(idx, c.id).find((a) => a.id === c.title && a.unlocked) ? TITLE_NAMES[c.title] : null;
 }

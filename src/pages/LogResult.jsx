@@ -17,7 +17,7 @@ export default function LogResult({ data, params, reload, isAdmin, isApprover })
   const editing = params.entry ? data.allEntries.find((e) => e.id === params.entry) : null;
   const choices = data.competitors.filter((c) => !c.is_placeholder && (isAdmin || data.myCompetitorIds.has(c.id)))
     .sort((a, b) => fullName(a).localeCompare(fullName(b)));
-  const tournaments = [...data.tournaments.values()].sort((a, b) => b.event_date.localeCompare(a.event_date));
+  const tournaments = [...data.tournaments.values()].filter((t) => !t.is_demo).sort((a, b) => b.event_date.localeCompare(a.event_date));
 
   const [form, setForm] = useState(() => {
     if (editing) {

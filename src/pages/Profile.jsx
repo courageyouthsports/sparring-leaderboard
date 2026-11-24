@@ -49,7 +49,7 @@ export default function Profile({ data, id, reload, isAdmin, isApprover, params 
         {['sparring', 'combat', 'class'].map((d) => <RatingCard key={d} data={data} id={id} discipline={d} />)}
       </section>
 
-      <Achievements data={data} c={c} canManage={canManage} reload={reload} />
+      <Achievements data={data} c={c} canManage={canManage} canAward={isApprover} reload={reload} />
 
       <section>
         <h2>ATA points, {seasonLabel(season)} season</h2>
@@ -207,41 +207,51 @@ function OpponentProfile({ data, c }) {
   );
 }
 
-function Achievements({ data, c, canManage, reload }) {
+function Achievements({ data, c, canManage, canAward, reload }) {
   const list = achievementsFor(data, c.id);
-  const earned = list.filter((a) => a.done);
+  const unlocked = list.filter((a) => a.unlocked);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  async function choose(title) {
+  async function run(fn) {
     setBusy(true); setError(null);
-    try { await rpc('set_title', { p_competitor: c.id, p_title: title || null }); await reload(); } catch (e) { setError(e.message); }
+    try { await fn(); await reload(); } catch (e) { setError(e.message); }
     setBusy(false);
   }
 
   return (
     <section>
-      <h2>Achievements <span className="muted">{earned.length} of {list.length}</span></h2>
-      <p className="small muted">Each achievement unlocks a title that can show next to {c.first_name}’s name on the leaderboards.</p>
-      {canManage && earned.length > 0 && (
+      <h2>Achievements <span className="muted">{unlocked.length} of {list.length}</span></h2>
+      <p className="small muted">Each achievement unlocks a title that can show next to {c.first_name}’s name on the leaderboards.
+        {canAward && ' As an instructor you can also award any title by hand.'}</p>
+      {(canManage || canAward) && unlocked.length > 0 && (
         <label className="title-pick">
           <span className="field-label">Title shown on leaderboards</span>
-          <select value={c.title && earned.some((a) => a.id === c.title) ? c.title : ''} disabled={busy} onChange={(e) => choose(e.target.value)}>
+          <select value={c.title && unlocked.some((a) => a.id === c.title) ? c.title : ''} disabled={busy}
+            onChange={(e) => run(() => rpc('set_title', { p_competitor: c.id, p_title: e.target.value || null }))}>
             <option value="">No title</option>
-            {earned.map((a) => <option key={a.id} value={a.id}>{TITLE_NAMES[a.id]}</option>)}
+            {unlocked.map((a) => <option key={a.id} value={a.id}>{TITLE_NAMES[a.id]}</option>)}
           </select>
         </label>
       )}
       <ErrorNote error={error} />
       <ul className="achievements">
         {list.map((a) => (
-          <li key={a.id} className={a.done ? 'done' : ''}>
+          <li key={a.id} className={a.unlocked ? 'done' : ''}>
             <div className="ach-top">
               <b>{a.title}</b>
-              <span className="muted small">{a.done ? 'Unlocked' : a.goal > 1 ? `${a.value.toLocaleString()} / ${a.goal.toLocaleString()}` : 'Locked'}</span>
+              <span className="muted small">
+                {a.done ? 'Unlocked' : a.awarded ? 'Awarded' : a.goal > 1 ? `${a.value.toLocaleString()} / ${a.goal.toLocaleString()}` : 'Locked'}
+              </span>
             </div>
             <span className="small">{a.desc}</span>
-            {!a.done && a.goal > 1 && <span className="progress"><span style={{ width: `${a.pct}%` }} /></span>}
+            {!a.unlocked && a.goal > 1 && <span className="progress"><span style={{ width: `${a.pct}%` }} /></span>}
+            {canAward && !a.done && (
+              <button type="button" className="link award-btn" disabled={busy}
+                onClick={() => run(() => rpc('award_title', { p_competitor: c.id, p_title: a.id, p_award: !a.awarded }))}>
+                {a.awarded ? 'Take back title' : 'Award title'}
+              </button>
+            )}
           </li>
         ))}
       </ul>

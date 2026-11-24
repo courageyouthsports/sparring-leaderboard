@@ -17,7 +17,7 @@ export function useOrgData(session) {
       const membership = mine[0];
       const org = membership.org_id;
 
-      const [orgRow, members, competitors, ratings, tournaments, entries, matches, managed, privateRows, challenges, completions, current, classLogs, classMatches] = await Promise.all([
+      const [orgRow, members, competitors, ratings, tournaments, entries, matches, managed, privateRows, challenges, completions, current, classLogs, classMatches, awarded] = await Promise.all([
         supabase.from('orgs').select('*').eq('id', org).single().then((r) => { if (r.error) throw new Error(r.error.message); return r.data; }),
         fetchAll('members', 'user_id, role, display_name, created_at', (q) => q.eq('org_id', org)),
         fetchAll('competitors', '*', (q) => q.eq('org_id', org)),
@@ -32,15 +32,19 @@ export function useOrgData(session) {
         supabase.rpc('current_challenge', { p_org: org }).then((r) => { if (r.error) throw new Error(r.error.message); return r.data; }),
         fetchAll('class_logs'),
         fetchAll('class_matches'),
+        fetchAll('competitor_titles'),
       ]);
 
-      const inOrg = new Set(competitors.map((c) => c.id));
+      // Demo data is only for admins to look around; everyone else never sees it.
+      const showDemo = membership.role === 'admin';
+      const visible = showDemo ? competitors : competitors.filter((c) => !c.is_demo);
+      const inOrg = new Set(visible.map((c) => c.id));
       const raw = {
         org: orgRow,
         members,
-        competitors,
+        competitors: visible,
         ratings: ratings.filter((r) => inOrg.has(r.competitor_id)),
-        tournaments,
+        tournaments: showDemo ? tournaments : tournaments.filter((t) => !t.is_demo),
         entries: entries.filter((e) => inOrg.has(e.competitor_id)),
         matches,
         managers: managed,
@@ -51,6 +55,7 @@ export function useOrgData(session) {
         challenge: (Array.isArray(current) ? current[0] : current) || null,   // this week's challenge
         classLogs: classLogs.filter((l) => inOrg.has(l.competitor_id)),
         classMatches,
+        awardedTitles: awarded.filter((a) => inOrg.has(a.competitor_id)),
         userId,
       };
       setState({ loading: false, error: null, membership, data: indexData(raw) });

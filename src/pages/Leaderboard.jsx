@@ -134,6 +134,7 @@ export default function Home({ data, params, reload, isAdmin }) {
                     <span className="board-name">
                       <b>{fullName(row.c)}{weeklyDone(data, row.c.id) && <span className="weekly-dot" title="Completed this week’s challenge" aria-label="Completed this week’s challenge" />}</b>
                       <span className="muted">
+                        {row.c.is_demo && <span className="demo-chip small-chip">Demo</span>}
                         {title && <span className="title-chip small-chip">{title}</span>}
                         {[divKey === 'all' && divisionOf(row.c, thisSeason)?.label, divKey !== 'all' && row.c.belt,
                           row.tier && TIER_NAMES[row.tier], row.provisional && 'provisional'].filter(Boolean).join(', ')}

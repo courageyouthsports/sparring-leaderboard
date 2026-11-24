@@ -26,6 +26,7 @@ export default function MeCard({ data, c, link = true }) {
       <div className="me-name">
         <h1>{link ? <a href={`#/c/${c.id}`}>{fullName(c)}</a> : fullName(c)}</h1>
         <p>
+          {c.is_demo && <span className="demo-chip">Demo, only admins see this</span>}
           {title && <span className="title-chip">{title}</span>}
           {weekly && <span className="weekly-chip">Weekly challenge done</span>}
           <span className="me-division">{division ? division.label : [c.belt, c.school].filter(Boolean).join(', ')}</span>

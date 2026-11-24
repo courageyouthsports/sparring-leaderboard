@@ -37,7 +37,7 @@ export default function MatchRow({ n, m, cap, team, data, self, onChange, onRemo
     const q = m.query.trim().toLowerCase();
     if (q.length < 2 || m.opponent_id) return [];
     return data.competitors
-      .filter((c) => c.id !== self && (!classMode || !c.is_placeholder) && fullName(c).toLowerCase().includes(q))
+      .filter((c) => c.id !== self && !c.is_demo && (!classMode || !c.is_placeholder) && fullName(c).toLowerCase().includes(q))
       .slice(0, 6);
   }, [m.query, m.opponent_id, data, self, classMode]);
   const matchCap = classMode ? (m.discipline === 'combat' ? 10 : 5) : cap;
