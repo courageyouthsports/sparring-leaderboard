@@ -58,7 +58,7 @@ function Signed({ session }) {
       <header className="bar">
         <a className="brand" href="#/">
           <img src="/emblems/competitive/gold.svg" alt="" width="28" height="28" />
-          <span>{data.org.name} <b>Sparring</b></span>
+          <span>Indiana <b>Fighter Tracker</b></span>
         </a>
         <nav className="nav" aria-label="Main">
           <a href="#/" aria-current={tab === '/' || tab === '' ? 'page' : undefined}>Home</a>

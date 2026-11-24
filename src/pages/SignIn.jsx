@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { ErrorNote, Field } from '../components/ui.jsx';
+import { APP_NAME } from '../config.js';
 
 export default function SignIn() {
   const [email, setEmail] = useState('');
@@ -30,7 +31,7 @@ export default function SignIn() {
       <div className="signin-mark">
         <img src="/emblems/competitive/diamond.svg" alt="" width="72" height="72" />
       </div>
-      <h1>Sparring Leaderboard</h1>
+      <h1>{APP_NAME}</h1>
       <p className="lede">Log tournament matches, watch your rating climb, and earn your next tier.</p>
       {!sent ? (
         <form onSubmit={send} className="stack">

@@ -1,4 +1,4 @@
-# Sparring Leaderboard
+# Indiana Fighter Tracker
 
 Students and parents log ATA tournament sparring results. The app turns them into:
 

@@ -1,3 +1,6 @@
+// The app's name, shown in the header, sign-in page, tab title and share card.
+export const APP_NAME = 'Indiana Fighter Tracker';
+
 // Everything you might want to tune lives here.
 
 // --- Tier emblems ----------------------------------------------------------

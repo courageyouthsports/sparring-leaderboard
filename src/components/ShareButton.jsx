@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DISCIPLINES, EMBLEM_EXT, TIER_NAMES } from '../config.js';
+import { APP_NAME, DISCIPLINES, EMBLEM_EXT, TIER_NAMES } from '../config.js';
 import { entriesOf, fullName, ratingOf, skillTier, recordOf, xpFor, xpTier } from '../lib/scoring.js';
 import { displayTitle } from '../lib/achievements.js';
 import { ordinal } from './ui.jsx';
@@ -92,7 +92,7 @@ async function drawCard(f) {
     g.fillText(`${f.record} record`, 86, 1110);
   }
   g.fillStyle = '#5C6B80'; g.font = body(30);
-  g.fillText('Sparring Leaderboard', 86, 1280);
+  g.fillText(APP_NAME, 86, 1280);
 
   return new Promise((res) => cv.toBlob(res, 'image/png'));
 }
