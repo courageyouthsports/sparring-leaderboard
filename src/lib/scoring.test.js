@@ -38,8 +38,9 @@ test('only the best five regional results count', () => {
 });
 
 test('tiers, badges and experience', () => {
-  assert.equal(xpTier(0).id, 'bronze');
-  assert.equal(xpTier(800).id, 'gold');
+  assert.equal(xpTier(0).id, 'guardian');
+  assert.equal(xpTier(800).id, 'heroic');
+  assert.equal(xpTier(5000).id, 'legend');
   assert.equal(ratingTier(1000).id, 'bronze');
   assert.equal(ratingTier(1360).id, 'diamond');
   assert.equal(skillTier({ rating: 1400, matches: 2 }).id, 'untested');

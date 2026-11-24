@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="gold">
-<g fill="#F6E3A1" stroke="#C99A0E" stroke-width="1.8" stroke-linejoin="round">
-  <path d="M30 54L14 44L19 57L10 61L28 68Z"/>
-  <path d="M90 54L106 44L101 57L110 61L92 68Z"/></g>
-<path d="M30 26H90V62Q90 86 60 97Q30 86 30 62Z" fill="#F6E3A1" fill-opacity="0.55" stroke="#C99A0E" stroke-width="3" stroke-linejoin="round"/>
-<path d="M36.599999999999994 33.480000000000004H83.4V61.56Q83.4 80.28 60 88.86Q36.599999999999994 80.28 36.599999999999994 61.56Z" fill="none" stroke="#C99A0E" stroke-width="1.6" stroke-linejoin="round"/>
-<path d="M60 50L70 60L60 70L50 60Z" fill="#F6E3A1" stroke="#C99A0E" stroke-width="2.2"/>
-</svg>

@@ -3,13 +3,14 @@
 // drop in a new file with the same name (SVG, or change the extension in src/config.js to use PNGs).
 import fs from 'fs';
 
-// n = how ornate: 0 plain outline, 1 gem, 2 inner border, 3 wings, 4 cut gem, 5 rays.
+// n = how ornate: 0 plain outline, 1 gem, 2 inner border, 3 wings, 4 cut gem, 5 rays, 6 rays + star.
 const XP_TIERS = [
-  { id: 'bronze',   n: 1, c: '#B4713D', light: '#E9C3A2' },
-  { id: 'silver',   n: 2, c: '#7D8BA1', light: '#D5DCE6' },
-  { id: 'gold',     n: 3, c: '#C99A0E', light: '#F6E3A1' },
-  { id: 'platinum', n: 4, c: '#2E9C95', light: '#B9E6E2' },
+  { id: 'guardian', n: 1, c: '#5F7A99', light: '#DCE5EF' },
+  { id: 'brave',    n: 2, c: '#3E8E5A', light: '#CDEBD7' },
+  { id: 'heroic',   n: 3, c: '#C8622D', light: '#F7D3BE' },
+  { id: 'fabled',   n: 4, c: '#2E9C95', light: '#B9E6E2' },
   { id: 'mythic',   n: 5, c: '#7B4FD6', light: '#D9CBF6' },
+  { id: 'legend',   n: 6, c: '#C99A0E', light: '#F6E3A1' },
 ];
 const SKILL_TIERS = [
   { id: 'untested', n: 0, c: '#9AA3B2', light: '#E6E9EE' },
@@ -43,7 +44,7 @@ const shield = s => `M${60 - 30 * s} ${60 - 34 * s}H${60 + 30 * s}V${60 + 2 * s}
 const diamond = s => `M60 ${60 - 40 * s}L${60 + 36 * s} 60L60 ${60 + 40 * s}L${60 - 36 * s} 60Z`;
 
 const draw = (frame, t, wingGap) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="${t.id}">
-${t.n === 5 ? rays(t, 47) : ''}${t.n >= 3 ? wings(t, wingGap) : ''}
+${t.n >= 5 ? rays(t, 47) : ''}${t.n >= 6 ? `<path d="M60 4l3.2 6.6 7.3 1-5.3 5.1 1.3 7.2L60 20.5l-6.5 3.4 1.3-7.2-5.3-5.1 7.3-1z" fill="${t.light}" stroke="${t.c}" stroke-width="1.6" stroke-linejoin="round"/>` : ''}${t.n >= 3 ? wings(t, wingGap) : ''}
 <path d="${frame(1)}" fill="${t.light}" fill-opacity="0.55" stroke="${t.c}" stroke-width="3" stroke-linejoin="round"/>
 ${t.n >= 2 ? `<path d="${frame(0.78)}" fill="none" stroke="${t.c}" stroke-width="1.6" stroke-linejoin="round"/>` : ''}
 ${t.n >= 1 ? gem(t.n >= 4 ? 13 : 10, t.n, t) : `<path d="M60 52L68 60L60 68L52 60Z" fill="none" stroke="${t.c}" stroke-width="2" stroke-dasharray="3 3"/>`}

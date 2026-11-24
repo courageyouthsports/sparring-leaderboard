@@ -7,15 +7,17 @@ export const EMBLEM_EXT = 'svg';
 export const TIER_NAMES = {
   bronze: 'Bronze', silver: 'Silver', gold: 'Gold', platinum: 'Platinum', mythic: 'Mythic',
   untested: 'Untested', diamond: 'Diamond',
+  guardian: 'Guardian', brave: 'Brave', heroic: 'Heroic', fabled: 'Fabled', legend: 'Legend',
 };
 
 // Experience track: earned by competing. Only ever goes up. Minimum XP for each tier.
 export const XP_TIERS = [
-  { id: 'bronze', min: 0 },
-  { id: 'silver', min: 250 },
-  { id: 'gold', min: 750 },
-  { id: 'platinum', min: 1500 },
+  { id: 'guardian', min: 0 },
+  { id: 'brave', min: 250 },
+  { id: 'heroic', min: 750 },
+  { id: 'fabled', min: 1500 },
   { id: 'mythic', min: 3000 },
+  { id: 'legend', min: 5000 },
 ];
 
 // Skill track: from the skill rating (everyone starts at 1000). Minimum rating for each tier.
@@ -107,6 +109,6 @@ export const TITLE_NAMES = {
   medalist: 'National Medalist',
   'champion-of-champions': 'Super-20 Champion',
   mythic: 'Diamond',
-  legend: 'Legend',
+  legend: 'Living Legend',
   dedicated: 'Dedicated',
 };

@@ -3,7 +3,7 @@ import { RATING_TIERS, XP_TIERS, TITLE_NAMES } from '../config.js';
 import { completionsOf, entriesOf, ratingOf, xpFor } from './scoring.js';
 
 const DIAMOND_RATING = RATING_TIERS.find((t) => t.id === 'diamond').min;
-const MYTHIC_XP = XP_TIERS.find((t) => t.id === 'mythic').min;
+const LEGEND_XP = XP_TIERS.find((t) => t.id === 'legend').min;
 
 // Titles an instructor or admin awarded by hand.
 export const awardedOf = (idx, id) => new Set((idx.awardedTitles || []).filter((a) => a.competitor_id === id).map((a) => a.title));
@@ -67,7 +67,7 @@ export const ACHIEVEMENTS = [
     unit: 'peak rating', start: 1000,
   },
   {
-    id: 'legend', name: 'Legend', desc: `Earn ${MYTHIC_XP.toLocaleString()} experience points`, goal: MYTHIC_XP,
+    id: 'legend', name: 'Living Legend', desc: `Reach Legend experience: ${LEGEND_XP.toLocaleString()} XP`, goal: LEGEND_XP,
     progress: (s) => xpFor(s.idx, s.id),
     unit: 'XP',
   },
