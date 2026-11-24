@@ -403,7 +403,7 @@ begin
   if v_user is null then
     raise exception 'No account for %. Sign in to the app once with that email first, then run this again.', p_email;
   end if;
-  v_code := upper(substr(encode(gen_random_bytes(4), 'hex'), 1, 6));
+  v_code := upper(substr(md5(random()::text || clock_timestamp()::text), 1, 6));
   insert into orgs (name, join_code) values (trim(p_name), v_code) returning id into v_org;
   insert into members (org_id, user_id, role, display_name) values (v_org, v_user, 'admin', trim(p_display_name));
   return v_code;
@@ -950,7 +950,7 @@ begin
   if v_user is null then
     raise exception 'No account for %. Sign in to the app once with that email first, then run this again.', p_email;
   end if;
-  v_code := upper(substr(encode(gen_random_bytes(4), 'hex'), 1, 6));
+  v_code := upper(substr(md5(random()::text || clock_timestamp()::text), 1, 6));
   insert into orgs (name, join_code) values (trim(p_name), v_code) returning id into v_org;
   insert into members (org_id, user_id, role, display_name) values (v_org, v_user, 'admin', trim(p_display_name));
   perform add_starter_challenges(v_org);
