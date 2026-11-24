@@ -37,12 +37,12 @@ export default function SignIn() {
           <Field label="Email">
             <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           </Field>
-          <button className="primary" disabled={busy}>{busy ? 'Sending…' : 'Email me a sign-in code'}</button>
+          <button className="primary" disabled={busy}>{busy ? 'Sending…' : 'Email me a sign-in link'}</button>
         </form>
       ) : (
         <form onSubmit={verify} className="stack">
-          <p>We sent a 6-digit code to <b>{email}</b>.</p>
-          <Field label="Code">
+          <p>We sent a sign-in email to <b>{email}</b>. Tap the link in it on this device, or enter the code if the email has one.</p>
+          <Field label="Code (if your email has one)">
             <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={8} required
               value={code} onChange={(e) => setCode(e.target.value)} autoFocus />
           </Field>
